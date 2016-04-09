@@ -218,14 +218,14 @@ exports.maniatrack = function(osu, bot){
 }
 
 function topplays(osu, data, mapid, mode, bot) {
-	console.log(mode)
 	var APIKEY = ConfigFile.api_keys.osu_api_key;
 	var osu1 = new osuapi.Api(APIKEY);
 	osu1.getScoresRaw({ b: mapid, m: mode, u: data.user_id, type: "id" }, function(err, data1) {
-		console.log(data1[0])
-		var pp = data1[0].pp
-		if (pp === null) {
+		if (data1[0].pp === null) {
 			var pp = 0
+		}
+		else {
+			var pp = data1[0].pp
 		}
 		var rank = data1[0].rank.replace("SH", "S").replace("X", "SS").replace("XH", "SS")
 		var count50 = data1[0].count50
@@ -275,7 +275,6 @@ function topplays(osu, data, mapid, mode, bot) {
 				}
 			}
 			setTimeout(function(){ bot.sendMessage(osu.channel, "**#"+topscore+"** top play! Rank: **"+rank+"** pp: **"+pp+"** Mods: **"+modds1+"**") }, 200)
-			//console.log("**#"+topscore+"** top play! PP: **"+pp+"** Mods: **"+modds1+"**")
         });
 	})
 }
