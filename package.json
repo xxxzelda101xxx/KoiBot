@@ -1,0 +1,36 @@
+{
+  "name": "WildBeast",
+  "version": "2.0.0-gamma.3",
+  "description": "A Discord bot",
+  "readme": "README.md",
+  "maintainers": [
+    "Perpetucake (Perpetucake@wildbeast.space)",
+    "Mirrorbreak (Mirrow@wildbeast.space)"
+  ],
+  "author": "Remco Jongschaap (Dougley@wildbeast.space)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SteamingMutt/WildBeast.git"
+  },
+  "license": "GPL-3.0",
+  "dependencies": {
+    "cleverbot-node": "0.2.x",
+    "csgo-market": "*",
+    "discord.js": "^6.0.0",
+    "entities": "^1.1.1",
+    "imgflipper": "*",
+    "leetspeak": "*",
+    "leveldown": "^1.4.3",
+    "levelup": "^1.3.1",
+    "node-opus": "^0.1.12",
+    "osu-api": "0.0.3",
+    "pmx": "^0.6.1",
+    "request": "^2.61.0",
+    "unirest": "*",
+    "winston": "^1.1.1",
+    "xml2js": "*",
+    "youtube-node": "1.2.x",
+    "ytdl-core": "^0.7.10"
+  },
+  "main": "DougBot.js"
+}

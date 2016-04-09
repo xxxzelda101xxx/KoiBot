@@ -1,0 +1,70 @@
+{
+    "useful_comments": [
+        "Please only enable debug_mode or verbose_logging if requested by one of the devs, as enabling this extends the logging capabilities and could potentially include sensitive info.",
+        "Command prefixes are length dynamic, meaning that prefixes can be as long as you want, change the value to `mention` to switch to mention activation.",
+        "There can only be 1 master user, 1 global level 1 user, etc.",
+        "If you define a different path to the image or music directory, type it like this:", "C:\\Users\\foobar\\Music",
+        "help_mode can either be `private` or `channel`",
+        "auto_restart tries to reconnect to Discord after an error or disconnection automatically.",
+        "default_server is a server the bot will create at first run, with this you can have a central contol hub for your bot.",
+        "error_printing, periodic_statistics and all of the overrides don't do anything yet.",
+        "If the channel entered in print_to_which_channel doens't exist, the bot will create it."
+    ],
+
+    "discord" : {
+		"email" : "",
+        "password" : "",
+		"token_mode" : false,
+        "token": "",
+        "oauth_url": ""
+    },
+    "bot_settings" : {
+        "cmd_prefix": "!",
+        "help_mode": "private",
+        "log_chat": false,
+        "verbose_logging": false,
+		"disable_music_commands": false,
+        "auto_restart": true,
+		"keymetrics": true,
+        "debug_mode": false,
+        "welcome_new_members": false,
+        "image_folder": "./images",
+        "music_folder": "./music"
+    },
+    "default_server" : {
+        "error_printing": true,
+        "periodic_statistics": true,
+        "print_to_which_channel": "",
+        "override_timeouts": false,
+        "override_permissions": false,
+        "override_nsfw": false
+    },
+    "join_on_launch" : [
+        ""
+    ],
+    "api_keys" : {
+        "google_key": "",
+        "cse_key": "",
+        "mashape_key": "",
+        "myapifilms_token": "",
+		"osu_api_key": ""
+    },
+    "imgflip" : {
+        "username": "",
+        "password": ""
+    },
+	"mal" : {
+		"user": "",
+		"pass": ""
+	},
+	"osu" : {
+		"osu-password" : "",
+		"osu-username" : ""
+	},
+    "permissions": {
+        "masterUser": "",
+        "level1": "",
+        "level2": "",
+        "level3": ""
+    }
+}
