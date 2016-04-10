@@ -47,6 +47,10 @@ Commands.disablecommand = {
 	name: "disablecommand",
 	level: 3,
 	fn: function(bot, msg, suffix) {
+		if (msg.channel.isPrivate) {
+			bot.sendMessage(msg, "You cannot disable commands in a pm!")
+			return;
+		}
 		if (!suffix) {
 			bot.sendMessage(msg.channel, "You didn't specify a command to disable!")
 			return;
@@ -61,8 +65,11 @@ Commands.disablecommand = {
 			return;
 		}
 		if (!Commands[suffix]) {
-			bot.sendMessage(msg.channel, "That command doesn't exist!")
-			return;
+			suffix = suffix.substring(1)
+			if (!Commands[suffix]) {
+				bot.sendMessage(msg.channel, "That command doesn't exist!")
+				return;
+			}
 		}
 		var searchTerm = suffix;
 		index = -1;

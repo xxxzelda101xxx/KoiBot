@@ -664,7 +664,6 @@ bot.on("message", function(msg) {
 			}
 		})
     }
-	//bannedcommands.items.forEach( function (command) {
 	for (var i = 0; i < bannedcommands.items.length; i++) {
 		if (bannedcommands.items[i].command === Commands[command].name) {
 			if (bannedcommands.items[i].server === msg.channel.server.id) {
