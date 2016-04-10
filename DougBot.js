@@ -31,6 +31,7 @@ osutracker = require("./runtime/osutracker.json");
 taikotracker = require("./runtime/taikotracker.json");
 ctbtracker = require("./runtime/ctbtracker.json");
 maniatracker = require("./runtime/maniatracker.json");
+bannedcommands = require("./runtime/bannedcommands.json");
 var keymetrics;
 pmx = require("pmx");
 probe = pmx.probe();
@@ -663,6 +664,15 @@ bot.on("message", function(msg) {
 			}
 		})
     }
+	//bannedcommands.items.forEach( function (command) {
+	for (var i = 0; i < bannedcommands.items.length; i++) {
+		if (bannedcommands.items[i].command === Commands[command].name) {
+			if (bannedcommands.items[i].server === msg.channel.server.id) {
+				bot.sendMessage(msg.channel, "That command has been disabled on this server.")
+				return;
+			}
+		}
+	}
     if (Commands[command]) {
       Debug.debuglogSomething("DougBot", "Command detected, trying to execute.", "info");
       if (msg.channel.server) {

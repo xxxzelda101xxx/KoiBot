@@ -30,6 +30,7 @@ var ConfigFile = require("../config.json"),
   taikotracker = require("./taikotracker.json");
   ctbtracker = require("./ctbtracker.json");
   maniatracker = require("./maniatracker.json");
+  bannedcommands = require("./bannedcommands.json");
   //gm = require('gm').subClass({imageMagick: true});
   mutemessage = [];
   unmutemessage = [];
@@ -40,6 +41,52 @@ var ConfigFile = require("../config.json"),
   lll = 0;
   jjj = 0;
   var Commands = [];
+  
+
+Commands.disablecommand = {
+	name: "disablecommand",
+	level: 3,
+	fn: function(bot, msg, suffix) {
+		if (!suffix) {
+			bot.sendMessage(msg.channel, "You didn't specify a command to disable!")
+			return;
+		}
+		suffix = suffix.trim()
+		if (suffix.split(" ").length > 1) {
+			bot.sendMessage(msg.channel, "There are no spaces in a command name!")
+			return;
+		}
+		if (suffix === "disablecommand" || suffix === "help") {
+			bot.sendMessage(msg.channel, "You cannot disable that command!")
+			return;
+		}
+		if (!Commands[suffix]) {
+			bot.sendMessage(msg.channel, "That command doesn't exist!")
+			return;
+		}
+		var searchTerm = suffix;
+		index = -1;
+		for(var i = 0, len = bannedcommands.items.length; i < len; i++) {
+			if (bannedcommands.items[i].command === searchTerm) {
+				if (bannedcommands.items[i].server === msg.channel.server.id) {
+					index = i;
+					break;
+				}
+			}
+		}
+		if (index > -1) {
+			bot.sendMessage(msg.channel, "!"+suffix+" is no longer disabled.")
+			bannedcommands.items.splice(index, 1)
+			require("fs").writeFile("./runtime/bannedcommands.json",JSON.stringify(bannedcommands,null,2), null);
+			return;
+		}
+		bot.sendMessage(msg.channel, "!"+suffix+" is now disabled.")
+		var command = {"command": suffix, "server": msg.channel.server.id}
+		bannedcommands.items.push(command)
+		require("fs").writeFile("./runtime/bannedcommands.json",JSON.stringify(bannedcommands,null,2), null);
+	}
+}
+  
 /*
 Commands.play = {
   "name": "play",
@@ -1456,7 +1503,7 @@ Commands.mute = {
 }
 
 Commands.unmute = {
-  name: "unmutetest",
+  name: "unmute",
   level: 0,
   fn: function(bot, msg, suffix) {
 	if (msg.channel.isPrivate) {
@@ -1508,8 +1555,6 @@ function unmute (msg, bot, suffix) {
 }
 
 Commands.announcement = {
-	//desc: "Send a PM to all users in a server. Admin only",
-	//deleteCommand: false, usage: "<message>", cooldown: 1,
 	name: "announcement",
 	level: 0,
 	fn: function(bot, msg, suffix) {
@@ -2747,7 +2792,7 @@ Commands.addrole = {
 },  
 
 Commands.removerole = {
-  name: "addrole",
+  name: "removerole",
   usage: "<wtf is this>",
   level: 0,
   fn: function(bot, msg, suffix) {
