@@ -1,16 +1,16 @@
 {
-  "name": "WildBeast",
-  "version": "2.0.0-gamma.3",
+  "name": "Koi.",
+  "version": "0.0.1",
   "description": "A Discord bot",
   "readme": "README.md",
   "maintainers": [
-    "Perpetucake (Perpetucake@wildbeast.space)",
-    "Mirrorbreak (Mirrow@wildbeast.space)"
+    "xxxzelda101xxx",
+    ""
   ],
-  "author": "Remco Jongschaap (Dougley@wildbeast.space)",
+  "author": "xxxzelda101xxx",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/SteamingMutt/WildBeast.git"
+    "url": "git+https://github.com/xxxzelda101xxx/Koi..git"
   },
   "license": "GPL-3.0",
   "dependencies": {
@@ -33,5 +33,5 @@
     "youtube-node": "1.2.x",
     "ytdl-core": "^0.7.10"
   },
-  "main": "DougBot.js"
+  "main": "Koi.js"
 }
