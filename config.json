@@ -1,0 +1,26 @@
+{
+    "discord" : {
+		"email" : "",
+        "password" : "",
+		"token_mode" : true,
+        "token": "",
+        "oauth_url": ""
+    },
+    "bot_settings" : {
+        "cmd_prefix": "!",
+        "log_chat": true
+    }
+    "api_keys" : {
+		"osu_api_key": ""
+    },
+	"mal" : {
+		"user": "",
+		"pass": ""
+	},
+    "permissions": {
+        "masterUser": "",
+        "level1": "",
+        "level2": "",
+        "level3": ""
+    }
+}

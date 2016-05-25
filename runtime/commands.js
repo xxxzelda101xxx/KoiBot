@@ -1,19 +1,10 @@
 var ConfigFile = require("../config.json"),
   Logger = require("./logger.js").Logger,
   Permissions = require("./permissions.js"),
-  imgDirectory = require("../config.json").image_folder,
-  Giphy = require("./giphy.js"),
   Cleverbot = require('cleverbot-node'),
   cleverbot = new Cleverbot(),
-  yt = require("./youtube_plugin"),
-  youtube_plugin = new yt(),
-  version = require("../package.json").version,
   unirest = require('unirest'),
-  Debug = require("./debugging.js"),
-  Defaulting = require("./serverdefaulting.js"),
-  DJ = require("./djlogic.js"),
   aliases = require("./alias.json"),
-  ignore = require("./ignoring.js");
   osuapi = require('osu-api');
   request = require('request');
   xml2js = require('xml2js');
@@ -21,7 +12,6 @@ var ConfigFile = require("../config.json"),
   fs = require('fs');
   exec = require('child_process').exec;
   http = require('http');
-  email = ConfigFile.discord.email;
   confirmCodes = [];
   announceMessages = [];
   twitchStreamers = require("./streamers.json");
@@ -30,8 +20,8 @@ var ConfigFile = require("../config.json"),
   taikotracker = require("./taikotracker.json");
   ctbtracker = require("./ctbtracker.json");
   maniatracker = require("./maniatracker.json");
+  allchannels = require('require-all')(__dirname + '/osutracking');
   bannedcommands = require("./bannedcommands.json");
-  //gm = require('gm').subClass({imageMagick: true});
   mutemessage = [];
   unmutemessage = [];
   mentions = [];
@@ -42,15 +32,52 @@ var ConfigFile = require("../config.json"),
   jjj = 0;
   var Commands = [];
   
-
+Commands.temporary = {
+  "name": "temporary",
+  level: 0,
+  fn: function(bot, msg, suffix) {
+	if (msg.channel.isPrivate) return;
+	var doomsserver = bot.servers.get("id", msg.channel.server.id);
+	var role1 = doomsserver.roles.get("name", "Discord Mod");
+	if (role1) {
+		if (!msg.channel.permissionsOf(msg.author).hasPermission("manageRoles") && msg.channel.server.membersWithRole(role1).indexOf(msg.author) < 0) { 
+			bot.sendMessage(msg, "You don't have permission to use this command.")
+			return;
+		}
+		if (msg.mentions.length < 1) {
+			bot.sendMessage(msg.channel, "You didn't mention any users!")
+			return;
+		}
+		msg.mentions.map(function(user) {
+			var doomsserver = bot.servers.get("id", msg.channel.server.id);
+			var role = doomsserver.roles.get("name", "Temporary");
+			var d = new Date();
+			var miliseconds = d.getTime();
+			var testing1234 = { "userid": user.id, "serverid": msg.channel.server.id, "joined": miliseconds }
+			doomsday.items.push(testing1234)
+			require("fs").writeFileSync("./runtime/doomsday.json",JSON.stringify(doomsday,null,2), null);
+			bot.addMemberToRole(user, role, (e) => { 
+				if (e) { 
+				bot.sendMessage(msg, "An error occured. Try again.") 
+				console.log(e)
+				}
+				else {
+					bot.sendMessage(msg, "Granted "+user+" 24 hours of temporary access!")
+				}
+			})
+		})
+	}
+	else {
+		bot.sendMessage(msg.channel, "An error occured.")
+	}
+  }
+}
+  
 Commands.disablecommand = {
 	name: "disablecommand",
 	level: 3,
 	fn: function(bot, msg, suffix) {
-		if (msg.channel.isPrivate) {
-			bot.sendMessage(msg, "You cannot disable commands in a pm!")
-			return;
-		}
+		if (msg.channel.isPrivate) return;
 		if (!suffix) {
 			bot.sendMessage(msg.channel, "You didn't specify a command to disable!")
 			return;
@@ -60,7 +87,7 @@ Commands.disablecommand = {
 			bot.sendMessage(msg.channel, "There are no spaces in a command name!")
 			return;
 		}
-		if (suffix === "disablecommand" || suffix === "help") {
+		if (suffix === "disablecommand" || suffix === "help" || suffix === "enablecommand") {
 			bot.sendMessage(msg.channel, "You cannot disable that command!")
 			return;
 		}
@@ -83,131 +110,78 @@ Commands.disablecommand = {
 		}
 		if (index > -1) {
 			bot.sendMessage(msg.channel, "!"+suffix+" is no longer disabled.")
-			bannedcommands.items.splice(index, 1)
-			require("fs").writeFile("./runtime/bannedcommands.json",JSON.stringify(bannedcommands,null,2), null);
 			return;
 		}
 		bot.sendMessage(msg.channel, "!"+suffix+" is now disabled.")
 		var command = {"command": suffix, "server": msg.channel.server.id}
 		bannedcommands.items.push(command)
-		require("fs").writeFile("./runtime/bannedcommands.json",JSON.stringify(bannedcommands,null,2), null);
+		require("fs").writeFileSync("./runtime/bannedcommands.json",JSON.stringify(bannedcommands,null,2), null);
 	}
 }
-  
-/*
-Commands.play = {
-  "name": "play",
-  level: 5,
-  fn: function(bot, msg, suffix) {
-	if (bot.voiceConnections.length === 0) {
-		bot.sendMessage(msg.channel, "I'm not in a voice channel!")
-		return
-	}
-	for (var i = 0; i < bot.voiceConnections.length; ++i) {
-		console.log(bot.voiceConnections[i].voiceChannel.server.id)
-		if (bot.voiceConnections[i].voiceChannel.server.id === msg.channel.server.id) {
-			var musicchannel = bot.voiceConnections[i]
-			break;
+
+Commands.enablecommand = {
+	name: "enablecommand",
+	level: 3,
+	fn: function(bot, msg, suffix) {
+		if (msg.channel.isPrivate) return;
+		if (!suffix) {
+			bot.sendMessage(msg.channel, "You didn't specify a command to enable!")
+			return;
 		}
-		else {
-			bot.sendMessage(msg.channel, "I'm not in a voice channel!")
-			return
+		suffix = suffix.trim()
+		if (suffix.split(" ").length > 1) {
+			bot.sendMessage(msg.channel, "There are no spaces in a command name!")
+			return;
 		}
-	}
-	musicchannel.playFile('./z.mp3')
-  }
-}
-		
-Commands.leavevoice = {
-  "name": "leavevoice",
-  level: 5,
-  fn: function(bot, msg, suffix) {
-	delchannel = "";
-	var s = suffix.split(" ")[0].toLowerCase();
-	var sp = s.split("");
-	for (var i = 0, l = 1 << s.length; i < l; i++) {
-		for (var j = i, k = 0; j; j >>= 1, k++) {
-			sp[k] = (j & 1) ? sp[k].toUpperCase() : sp[k].toLowerCase();
-		}
-		var st = sp.join("");
-		//console.log(st)
-		delchannel = msg.channel.server.channels.get("name", st);
-		if (delchannel) {
-			delchannel = msg.channel.server.channels.get("name", st);
-			break;
-		}
-	}
-	if (delchannel) {
-		if (bot.voiceConnections.length === 0) {
-			bot.sendMessage(msg.channel, "I cannot leave a voice channel that I'm not in!")
-			return
-		}
-		for (var i = 0; i < bot.voiceConnections.length; ++i) {
-			if (i === bot.voiceConnections.length) {
-				if (bot.voiceConnections[i].id === delchannel.id) {}
-				else {
-					bot.sendMessage(msg.channel, "I cannot leave a voice channel that I'm not in!")
-					return
-				}
-			}
-		}
-		bot.leaveVoiceChannel(delchannel)
-		bot.sendMessage(msg.channel, "Left **"+delchannel.name+"**")
-	}
-  }
-}
-		
-Commands.joinvoice = {
-  "name": "joinvoice",
-  level: 5,
-  fn: function(bot, msg, suffix) {
-	delchannel = "";
-	var s = suffix.split(" ")[0].toLowerCase();
-	var sp = s.split("");
-	for (var i = 0, l = 1 << s.length; i < l; i++) {
-		for (var j = i, k = 0; j; j >>= 1, k++) {
-			sp[k] = (j & 1) ? sp[k].toUpperCase() : sp[k].toLowerCase();
-		}
-		var st = sp.join("");
-		//console.log(st)
-		delchannel = msg.channel.server.channels.get("name", st);
-		if (delchannel) {
-			delchannel = msg.channel.server.channels.get("name", st);
-			break;
-		}
-	}
-	
-	if (delchannel) {
-		for (var i = 0; i < bot.voiceConnections.length; ++i) {
-			if (bot.voiceConnections[i].id === delchannel.id) {
-				bot.sendMessage(msg.channel, "I've already joined **"+delchannel.name+"**!")
+		if (!Commands[suffix]) {
+			suffix = suffix.substring(1)
+			if (!Commands[suffix]) {
+				bot.sendMessage(msg.channel, "That command doesn't exist!")
 				return;
 			}
 		}
-		bot.joinVoiceChannel(delchannel, function(err, connection) {
-			if (err) {
-				bot.sendMessage(msg.channel, err)
+		var searchTerm = suffix;
+		index = -1;
+		for(var i = 0, len = bannedcommands.items.length; i < len; i++) {
+			if (bannedcommands.items[i].command === searchTerm) {
+				if (bannedcommands.items[i].server === msg.channel.server.id) {
+					index = i;
+					break;
+				}
 			}
-			if (connection) {
-				bot.sendMessage(msg.channel, "Joined **"+delchannel.name+"**")
-				console.log(bot.voiceConnections[0])
-				//bot.voiceConnections[0].playFile('./z.mp3')
-			}
-		})
+		}
+		if (index > -1) {
+			bot.sendMessage(msg.channel, "!"+suffix+" is now enabled.")
+			bannedcommands.items.splice(index, 1)
+			require("fs").writeFileSync("./runtime/bannedcommands.json",JSON.stringify(bannedcommands,null,2), null);
+			return;
+		}
+		bot.sendMessage(msg.channel, "!"+suffix+" is already enabled.")
 	}
-  }
-}*/
+}
 		
 Commands.track = {
   "name": "track",
-  level: 1,
+  level: 0,
   fn: function(bot, msg, suffix) {
 	if (suffix.split(" ")[0].toLowerCase() === "osu") {
 		var APIKEY = ConfigFile.api_keys.osu_api_key;
 		var osu = new osuapi.Api(APIKEY);
+		path = "./osutracking/"+msg.channel.id+".json";
+		try {
+			fs.accessSync(path, fs.F_OK);
+		} 
+		catch (e) {
+			fs.closeSync(fs.openSync(__dirname + "/osutracking/"+msg.channel.id+".json", 'w'));
+			obj = {"items": []};
+			filename = __dirname + "/osutracking/"+msg.channel.id+".json";
+			require("fs").writeFileSync(filename,JSON.stringify(obj,null,2), null);
+		}
+		filename =  __dirname +"/osutracking/"+msg.channel.id+".json";
+		trackedchannel = require(filename);
 		if (!suffix.split(" ")[1]) {
 			currentOsu = [];
-			osutracker.items.forEach( function (osu) {
+			trackedchannel.items.forEach( function (osu) {
 				if (osu === null) {}
 				else {
 					if (osu.channel === msg.channel.id) {
@@ -234,37 +208,36 @@ Commands.track = {
 			if (data) {
 				var searchTerm = data.username.toLowerCase();
 				index = -1;
-				for(var i = 0, len = osutracker.items.length; i < len; i++) {
-					if (osutracker.items[i] === null) i++;
-					//console.log(i)
-					if (osutracker.items[i].Username.toLowerCase() === searchTerm) {
-						if (osutracker.items[i].channel === msg.channel.id) {
+				for(var i = 0, len = trackedchannel.items.length; i < len; i++) {
+					if (trackedchannel.items[i] === null) i++;
+					if (trackedchannel.items[i].Username.toLowerCase() === searchTerm) {
+						if (trackedchannel.items[i].channel === msg.channel.id) {
 							index = i;
 							break;
 						}
 					}
 				}
 				if (index > -1) {
-					testing1234 = osutracker.items[index]
+					var testing1234 = trackedchannel.items[index]
 					bot.sendMessage(msg.channel, "No longer tracking **osu!** gains for **"+testing1234.Username+"** in "+msg.channel)
-					osutracker.items.splice(index, 1)
-					require("fs").writeFile("./runtime/osutracker.json",JSON.stringify(osutracker,null,2), null);
-					return
+					trackedchannel.items.splice(index, 1)
+					require("fs").writeFileSync(filename,JSON.stringify(trackedchannel,null,2), null);
+					return;
 				}
 				bot.sendMessage(msg.channel, "Now tracking **osu!** gains for **"+data.username+"** in "+msg.channel)
 				var osuname = data.username;
 				var osurank = data.pp_rank;
 				var osupp = data.pp_raw;
 				var testing1234 = {"Username": osuname, "Rank": osurank, "pp": osupp, "channel": msg.channel.id, "recent": ""}
-				osutracker.items.forEach( function (command) {
+				trackedchannel.items.forEach( function (command) {
 					osusearch(testing1234, msg, command);
 					if  (jjj === 1) return;
 				});
 			}
 			if (jjj != 1) {
-				osutracker.items.push(testing1234)
+				trackedchannel.items.push(testing1234)
 			}
-			require("fs").writeFile("./runtime/osutracker.json",JSON.stringify(osutracker,null,2), null);
+			require("fs").writeFileSync(filename,JSON.stringify(trackedchannel,null,2), null);
 			jjj = 0;  
 		})
 	}
@@ -314,7 +287,7 @@ Commands.track = {
 					testing1234 = taikotracker.items[index]
 					bot.sendMessage(msg.channel, "No longer tracking **Taiko** gains for **"+testing1234.Username+"** in "+msg.channel)
 					taikotracker.items.splice(index, 1)
-					require("fs").writeFile("./runtime/taikotracker.json",JSON.stringify(taikotracker,null,2), null);
+					require("fs").writeFileSync("./runtime/taikotracker.json",JSON.stringify(taikotracker,null,2), null);
 					return
 				}
 				bot.sendMessage(msg.channel, "Now tracking **Taiko** gains for **"+data.username+"** in "+msg.channel)
@@ -330,7 +303,7 @@ Commands.track = {
 			if (jjj != 1) {
 				taikotracker.items.push(testing1234)
 			}
-			require("fs").writeFile("./runtime/taikotracker.json",JSON.stringify(taikotracker,null,2), null);
+			require("fs").writeFileSync("./runtime/taikotracker.json",JSON.stringify(taikotracker,null,2), null);
 			jjj = 0;  
 		})
 	}
@@ -380,7 +353,7 @@ Commands.track = {
 					testing1234 = ctbtracker.items[index]
 					bot.sendMessage(msg.channel, "No longer tracking **Catch the Beat** gains for **"+testing1234.Username+"** in "+msg.channel)
 					ctbtracker.items.splice(index, 1)
-					require("fs").writeFile("./runtime/ctbtracker.json",JSON.stringify(ctbtracker,null,2), null);
+					require("fs").writeFileSync("./runtime/ctbtracker.json",JSON.stringify(ctbtracker,null,2), null);
 					return
 				}
 				bot.sendMessage(msg.channel, "Now tracking **Catch the Beat** gains for **"+data.username+"** in "+msg.channel)
@@ -396,7 +369,7 @@ Commands.track = {
 			if (jjj != 1) {
 			ctbtracker.items.push(testing1234)
 			}
-			require("fs").writeFile("./runtime/ctbtracker.json",JSON.stringify(ctbtracker,null,2), null);
+			require("fs").writeFileSync("./runtime/ctbtracker.json",JSON.stringify(ctbtracker,null,2), null);
 			jjj = 0;  
 		})
 	}
@@ -446,7 +419,7 @@ Commands.track = {
 					testing1234 = maniatracker.items[index]
 					bot.sendMessage(msg.channel, "No longer tracking **osu!mania** gains for **"+testing1234.Username+"** in "+msg.channel)
 					maniatracker.items.splice(index, 1)
-					require("fs").writeFile("./runtime/maniatracker.json",JSON.stringify(maniatracker,null,2), null);
+					require("fs").writeFileSync("./runtime/maniatracker.json",JSON.stringify(maniatracker,null,2), null);
 					return
 				}
 				bot.sendMessage(msg.channel, "Now tracking **osu!mania** gains for **"+data.username+"** in "+msg.channel)
@@ -462,7 +435,7 @@ Commands.track = {
 			if (jjj != 1) {
 				maniatracker.items.push(testing1234)
 			}
-			require("fs").writeFile("./runtime/maniatracker.json",JSON.stringify(maniatracker,null,2), null);
+			require("fs").writeFileSync("./runtime/maniatracker.json",JSON.stringify(maniatracker,null,2), null);
 			jjj = 0;  
 		})
 	}
@@ -473,6 +446,7 @@ Commands.customcommands = {
   "name": "customcommands",
   level: 3,
   fn: function(bot, msg, suffix) {
+	if (msg.channel.isPrivate) return;
 	msgcustomcom = [];
 	customcommands.items.forEach( function (com) {
 		if (com === null) {}
@@ -496,161 +470,21 @@ Commands.customcommands = {
 	}
   }
 }
-  
-Commands.trackosu = {
-  name: "trackosu",
-  level: 1,
-  fn: function(bot, msg, suffix) {
-	var APIKEY = ConfigFile.api_keys.osu_api_key;
-	var osu = new osuapi.Api(APIKEY);
-	if (!suffix) {
-		currentOsu = [];
-		osutracker.items.forEach( function (osu) {
-			if (osu === null) {}
-			else {
-				if (osu.channel === msg.channel.id) {
-					currentOsu.push(osu.Username)
-				}
-			}
-        });
-		currentOsu = currentOsu.join(", ")
-		if (currentOsu === "" || currentOsu === " ") {
-			bot.sendMessage(msg.channel, "Not currently tracking any osu! players in "+msg.channel)
-			return;
-		}
-		else {
-			bot.sendMessage(msg.channel, "Currently tracking the following osu! players in "+msg.channel+": "+currentOsu)
-			return;
-		}
-	}
-	osu.getUser(suffix, function(err, data) {
-		if (!data) { 
-			bot.sendMessage(msg.channel, "User not found.") 
-			return;
-		}
-		if (data) {
-			var searchTerm = data.username.toLowerCase();
-			index = -1;
-			for(var i = 0, len = osutracker.items.length; i < len; i++) {
-				if (osutracker.items[i] === null) i++;
-				//console.log(i)
-				if (osutracker.items[i].Username.toLowerCase() === searchTerm) {
-					if (osutracker.items[i].channel === msg.channel.id) {
-						index = i;
-						break;
-					}
-				}
-			}
-			if (index > -1) {
-				testing1234 = osutracker.items[index]
-				bot.sendMessage(msg.channel, "No longer tracking **osu!** gains for **"+testing1234.Username+"** in "+msg.channel)
-				osutracker.items.splice(index, 1)
-				require("fs").writeFile("./runtime/osutracker.json",JSON.stringify(osutracker,null,2), null);
-				return
-			}
-			bot.sendMessage(msg.channel, "Now tracking **osu!** gains for **"+data.username+"** in "+msg.channel)
-			var osuname = data.username;
-			var osurank = data.pp_rank;
-			var osupp = data.pp_raw;
-			var testing1234 = {"Username": osuname, "Rank": osurank, "pp": osupp, "channel": msg.channel.id, "recent": ""}
-			osutracker.items.forEach( function (command) {
-				osusearch(testing1234, msg, command);
-				if  (jjj === 1) return;
-			});
-		}
-		if (jjj != 1) {
-			osutracker.items.push(testing1234)
-		}
-		require("fs").writeFile("./runtime/osutracker.json",JSON.stringify(osutracker,null,2), null);
-		jjj = 0;  
-	})
-  }
-}
 
 function osusearch (testing1234, msg, command) {
-	for (var i = 0; i < osutracker.items.length; i++) {
-		if (osutracker.items[i] === null) return
-		if (osutracker.items[i].channel === testing1234.channel) {
-			if (osutracker.items[i].Username === testing1234.Username) {
+	for (var i = 0; i < trackedchannel.items.length; i++) {
+		if (trackedchannel.items[i] === null) return
+		if (trackedchannel.items[i].channel === testing1234.channel) {
+			if (trackedchannel.items[i].Username === testing1234.Username) {
 				//delete cccoms.items[i]
-				osutracker.items[i].Username = testing1234.Username
-				osutracker.items[i].channel = testing1234.channel
-				osutracker.items[i].Rank = testing1234.Rank
-				osutracker.items[i].pp = testing1234.pp
+				trackedchannel.items[i].Username = testing1234.Username
+				trackedchannel.items[i].channel = testing1234.channel
+				trackedchannel.items[i].Rank = testing1234.Rank
+				trackedchannel.items[i].pp = testing1234.pp
 				jjj = 1;
 			}
 		}
 	}
-}
-
-Commands.tracktaiko = {
-  name: "tracktaiko",
-  level: 1,
-  fn: function(bot, msg, suffix) {
-	var APIKEY = ConfigFile.api_keys.osu_api_key;
-	var osu = new osuapi.Api(APIKEY, 1);
-	if (!suffix) {
-		currentTaiko = [];
-		taikotracker.items.forEach( function (osu) {
-			if (osu === null) {}
-			else {
-				if (osu.channel === msg.channel.id) {
-					currentTaiko.push(osu.Username)
-				}
-			}
-        });
-		currentTaiko = currentTaiko.join(", ")
-		if (currentTaiko === "" || currentTaiko === " ") {
-			bot.sendMessage(msg.channel, "Not currently tracking any Taiko players in "+msg.channel)
-			return;
-		}
-		else {
-			bot.sendMessage(msg.channel, "Currently tracking the following Taiko players in "+msg.channel+": "+currentTaiko)
-			return;
-		}
-	}
-	osu.getUser(suffix, function(err, data) {
-		if (!data) { 
-			bot.sendMessage(msg.channel, "User not found.") 
-			return;
-		}
-		if (data) {
-			var searchTerm = data.username.toLowerCase();
-			index = -1;
-			for(var i = 0, len = taikotracker.items.length; i < len; i++) {
-				if (taikotracker.items[i] === null) i++;
-				//console.log(i)
-				if (taikotracker.items[i].Username.toLowerCase() === searchTerm) {
-					if (taikotracker.items[i].channel === msg.channel.id) {
-						index = i;
-						break;
-					}
-				}
-			}
-			if (index > -1) {
-				testing1234 = taikotracker.items[index]
-				bot.sendMessage(msg.channel, "No longer tracking **Taiko** gains for **"+testing1234.Username+"** in "+msg.channel)
-				taikotracker.items.splice(index, 1)
-				require("fs").writeFile("./runtime/taikotracker.json",JSON.stringify(taikotracker,null,2), null);
-				return
-			}
-			bot.sendMessage(msg.channel, "Now tracking **Taiko** gains for **"+data.username+"** in "+msg.channel)
-			var osuname = data.username;
-			var osurank = data.pp_rank;
-			var osupp = data.pp_raw;
-			var testing1234 = {"Username": osuname, "Rank": osurank, "pp": osupp, "channel": msg.channel.id, "recent": ""}
-			taikotracker.items.forEach( function (command) {
-				taikosearch(testing1234, msg, command);
-				if  (jjj === 1) return;
-			});
-		}
-		if (jjj != 1) {
-			taikotracker.items.push(testing1234)
-		}
-		require("fs").writeFile("./runtime/taikotracker.json",JSON.stringify(taikotracker,null,2), null);
-		jjj = 0;  
-	})
-  }
 }
 
 function taikosearch (testing1234, msg, command) {
@@ -669,76 +503,6 @@ function taikosearch (testing1234, msg, command) {
 	}
 }
 
-Commands.trackctb = {
-  name: "trackctb",
-  level: 1,
-  fn: function(bot, msg, suffix) {
-	var APIKEY = ConfigFile.api_keys.osu_api_key;
-	var osu = new osuapi.Api(APIKEY, 2);
-	if (!suffix) {
-		currentCtb = [];
-		ctbtracker.items.forEach( function (osu) {
-			if (osu === null) {}
-			else {
-				if (osu.channel === msg.channel.id) {
-					currentCtb.push(osu.Username)
-				}
-			}
-        });
-		currentCtb = currentCtb.join(", ")
-		if (currentCtb === "" || currentCtb === " ") {
-			bot.sendMessage(msg.channel, "Not currently tracking any Catch the Beat players in "+msg.channel)
-			return;
-		}
-		else {
-			bot.sendMessage(msg.channel, "Currently tracking the following Catch the Beat players in "+msg.channel+": "+currentCtb)
-			return;
-		}
-	}
-	osu.getUser(suffix, function(err, data) {
-		if (!data) { 
-			bot.sendMessage(msg.channel, "User not found.") 
-			return;
-		}
-		if (data) {
-			var searchTerm = data.username.toLowerCase();
-			index = -1;
-			for(var i = 0, len = ctbtracker.items.length; i < len; i++) {
-				if (ctbtracker.items[i] === null) i++;
-				//console.log(i)
-				if (ctbtracker.items[i].Username.toLowerCase() === searchTerm) {
-					if (ctbtracker.items[i].channel === msg.channel.id) {
-						index = i;
-						break;
-					}
-				}
-			}
-			if (index > -1) {
-				testing1234 = ctbtracker.items[index]
-				bot.sendMessage(msg.channel, "No longer tracking **Catch the Beat** gains for **"+testing1234.Username+"** in "+msg.channel)
-				ctbtracker.items.splice(index, 1)
-				require("fs").writeFile("./runtime/ctbtracker.json",JSON.stringify(ctbtracker,null,2), null);
-				return
-			}
-			bot.sendMessage(msg.channel, "Now tracking **Catch the Beat** gains for **"+data.username+"** in "+msg.channel)
-			var osuname = data.username;
-			var osurank = data.pp_rank;
-			var osupp = data.pp_raw;
-			var testing1234 = {"Username": osuname, "Rank": osurank, "pp": osupp, "channel": msg.channel.id, "recent": ""}
-			ctbtracker.items.forEach( function (command) {
-				ctbsearch(testing1234, msg, command);
-				if  (jjj === 1) return;
-			});
-		}
-		if (jjj != 1) {
-			ctbtracker.items.push(testing1234)
-		}
-		require("fs").writeFile("./runtime/ctbtracker.json",JSON.stringify(ctbtracker,null,2), null);
-		jjj = 0;  
-	})
-  }
-}
-
 function ctbsearch (testing1234, msg, command) {
 	for (var i = 0; i < ctbtracker.items.length; i++) {
 		if (ctbtracker.items[i] === null) return
@@ -753,76 +517,6 @@ function ctbsearch (testing1234, msg, command) {
 			}
 		}
 	}
-}
-
-Commands.trackmania = {
-  name: "trackmania",
-  level: 1,
-  fn: function(bot, msg, suffix) {
-	var APIKEY = ConfigFile.api_keys.osu_api_key;
-	var osu = new osuapi.Api(APIKEY, 3);
-	if (!suffix) {
-		currentMania = [];
-		maniatracker.items.forEach( function (osu) {
-			if (osu === null) {}
-			else {
-				if (osu.channel === msg.channel.id) {
-					currentMania.push(osu.Username)
-				}
-			}
-        });
-		currentMania = currentMania.join(", ")
-		if (currentMania === "" || currentMania === " ") {
-			bot.sendMessage(msg.channel, "Not currently tracking any osu!mania players in "+msg.channel)
-			return;
-		}
-		else {
-			bot.sendMessage(msg.channel, "Currently tracking the following osu!mania players in "+msg.channel+": "+currentMania)
-			return;
-		}
-	}
-	osu.getUser(suffix, function(err, data) {
-		if (!data) { 
-			bot.sendMessage(msg.channel, "User not found.") 
-			return;
-		}
-		if (data) {
-			var searchTerm = data.username.toLowerCase();
-			index = -1;
-			for(var i = 0, len = maniatracker.items.length; i < len; i++) {
-				if (maniatracker.items[i] === null) i++;
-				//console.log(i)
-				if (maniatracker.items[i].Username.toLowerCase() === searchTerm) {
-					if (maniatracker.items[i].channel === msg.channel.id) {
-						index = i;
-						break;
-					}
-				}
-			}
-			if (index > -1) {
-				testing1234 = maniatracker.items[index]
-				bot.sendMessage(msg.channel, "No longer tracking **osu!mania** gains for **"+testing1234.Username+"** in "+msg.channel)
-				maniatracker.items.splice(index, 1)
-				require("fs").writeFile("./runtime/maniatracker.json",JSON.stringify(maniatracker,null,2), null);
-				return
-			}
-			bot.sendMessage(msg.channel, "Now tracking **osu!mania** gains for **"+data.username+"** in "+msg.channel)
-			var osuname = data.username;
-			var osurank = data.pp_rank;
-			var osupp = data.pp_raw;
-			var testing1234 = {"Username": osuname, "Rank": osurank, "pp": osupp, "channel": msg.channel.id, "recent": ""}
-			maniatracker.items.forEach( function (command) {
-				maniasearch(testing1234, msg, command);
-				if  (jjj === 1) return;
-			});
-		}
-		if (jjj != 1) {
-			maniatracker.items.push(testing1234)
-		}
-		require("fs").writeFile("./runtime/maniatracker.json",JSON.stringify(maniatracker,null,2), null);
-		jjj = 0;  
-	})
-  }
 }
 
 function maniasearch (testing1234, msg, command) {
@@ -845,16 +539,16 @@ Commands.setstafflog = {
   "name": "setstafflog",
   level: 3,
   fn: function(bot, msg, suffix) {
+	if (msg.channel.isPrivate) return;
 	channeltocheck = suffix.split(" ")[0].replace("<", "").replace(">", "").replace("#", "")
 	stafflog = msg.channel.server.channels.get("id", channeltocheck);
 	if (stafflog) {
-		//console.log(stafflog)
 		Permissions.SetStafflog(msg.channel.server.id, stafflog.id, function(err, allow) {
 			if (err) {
 				bot.sendMessage(msg.channel, "Error setting Staff Log channel. Try again later.")
 			}
 			else {
-				bot.sendMessage(msg.channel, stafflog+" has been set as a Staff Log channel.")
+				bot.sendMessage(msg.channel, stafflog+" has been set as the Staff Log channel.")
 			}
 		})
 	}
@@ -871,30 +565,16 @@ Commands.contact = {
 	bot.sendMessage(msg.channel, "Please join my support server if you are having issues with Koi. http://discord.gg/0vAsDJGEnPOcdmHX")
   }
 }
-  
-Commands.invite = {
-  "name": "invite",
-  level: 3,
-  fn: function(bot, msg, suffix) {
-	  bot.createInvite(msg.channel, {"maxUses" : 1}, (err, res) => {
-		if (res) {
-			bot.sendMessage(msg.channel, "Here is a single use invite link: "+res)
-		}
-		else {
-			bot.sendMessage(msg.channel, "Error: "+err)
-		}
-	  })
-  }
-}
 
 Commands.botservers = {
   "name": "botservers",
   level: 5,
   fn: function(bot, msg, suffix) {
+	var botservers = []
 	for (var i = 0; i < bot.servers.length; i++) {
-		bot.sendMessage(msg.channel, "Server name: `"+bot.servers[i].name+"` Members: `"+bot.servers[i].members.length+"`")
-		//console.log(bot.servers[1])
+		botservers.push("Server name: `"+bot.servers[i].name+"` Members: `"+bot.servers[i].members.length+"`")
 	}
+	bot.sendMessage(msg.channel, botservers)
   }
 }
 
@@ -902,12 +582,12 @@ Commands.lastmention = {
   "name": "lastmention",
   level: 0,
   fn: function(bot, msg, suffix) {
+	if (msg.channel.isPrivate) return;
 	v = 0;
 	z = 0;
 	attempts = 0;
 	mentionchannel = "";
 	channeltocheck = suffix.split(" ")[0].replace("<", "").replace(">", "").replace("#", "")
-	//console.log(channeltocheck)
 	if (channeltocheck != "") {
 		mentionchannel = msg.channel.server.channels.get("id", channeltocheck);
 	}
@@ -923,10 +603,7 @@ Commands.lastmention = {
 				userid = msg.author.id
 				for (var i = 0; i < 100; i++) {
 					if(messages[i].content.indexOf(userid) > -1) {
-						//console.log(messages[i].author.id != "125841801797042177")
 						if (messages[i].author.id != "125841801797042177") {
-							//console.log("hi")1459902989447
-							//else if (i === 5000) bot.sendMessage(msg.channel, "Couldn't find a mention in the last 5000 messages.");
 							bot.getChannelLogs(mentionchannel, 4, { before: messages[i] }, function(error, prevmessages) {
 								if (error) {
 									bot.sendMessage(msg.channel, "Something went wrong while fetching logs.");
@@ -938,7 +615,7 @@ Commands.lastmention = {
 									var timestamp3 = discordtimestamp(prevmessages[1].timestamp)
 									var timestamp4 = discordtimestamp(prevmessages[0].timestamp)
 									var timestamp5 = discordtimestamp(messages[i].timestamp)
-									bot.sendMessage(msg.channel, "Latest mention in "+ mentionchannel +": \n" + timestamp1 + " UTC **" + prevmessages[3].author.username + "**: " + prevmessages[3].cleanContent + "\n" + timestamp2 + " UTC **" + prevmessages[2].author.username + "**: " + prevmessages[2].cleanContent + "\n" + timestamp3 + " UTC **" + prevmessages[1].author.username + "**: " + prevmessages[1].cleanContent + "\n" + timestamp4 + " UTC **" + prevmessages[0].author.username + "**: " + prevmessages[0].cleanContent + "\n" + timestamp5 + " UTC **" + messages[i].author.username + "**: " + messages[i]);
+									bot.sendMessage(msg.channel, "Latest mention in "+ mentionchannel +": \n" + timestamp1 + " UTC **" + prevmessages[3].author.username + "**: " + prevmessages[3].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ") + "\n" + timestamp2 + " UTC **" + prevmessages[2].author.username + "**: " + prevmessages[2].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ") + "\n" + timestamp3 + " UTC **" + prevmessages[1].author.username + "**: " + prevmessages[1].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ") + "\n" + timestamp4 + " UTC **" + prevmessages[0].author.username + "**: " + prevmessages[0].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ") + "\n" + timestamp5 + " UTC **" + messages[i].author.username + "**: " + messages[i].content.replace(/@everyone/gi, " ").replace(/@here/gi, " "));
 								}
 							})
 							break;
@@ -964,7 +641,6 @@ function discordtimestamp(timestamp) {
 }
 
 function lastmention (bot, msg, suffix, v, z, attempts, mentionchannel) {
-	//console.log(attempts)
 	if (attempts < 50) {
 		bot.getChannelLogs(mentionchannel, 100, {before: z}, function(error, messages) {
 			if (error) {
@@ -987,7 +663,7 @@ function lastmention (bot, msg, suffix, v, z, attempts, mentionchannel) {
 									var timestamp3 = discordtimestamp(prevmessages[1].timestamp)
 									var timestamp4 = discordtimestamp(prevmessages[0].timestamp)
 									var timestamp5 = discordtimestamp(messages[i].timestamp)
-									bot.sendMessage(msg.channel, "Latest mention in "+ mentionchannel +": \n" + timestamp1 + " UTC **" + prevmessages[3].author.username + "**: " + prevmessages[3].cleanContent + "\n" + timestamp2 + " UTC **" + prevmessages[2].author.username + "**: " + prevmessages[2].cleanContent + "\n" + timestamp3 + " UTC **" + prevmessages[1].author.username + "**: " + prevmessages[1].cleanContent + "\n" + timestamp4 + " UTC **" + prevmessages[0].author.username + "**: " + prevmessages[0].cleanContent + "\n" + timestamp5 + " UTC **" + messages[i].author.username + "**: " + messages[i]);
+									bot.sendMessage(msg.channel, "Latest mention in "+ mentionchannel +": \n" + timestamp1 + " UTC **" + prevmessages[3].author.username + "**: " + prevmessages[3].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ") + "\n" + timestamp2 + " UTC **" + prevmessages[2].author.username + "**: " + prevmessages[2].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ") + "\n" + timestamp3 + " UTC **" + prevmessages[1].author.username + "**: " + prevmessages[1].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ") + "\n" + timestamp4 + " UTC **" + prevmessages[0].author.username + "**: " + prevmessages[0].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ") + "\n" + timestamp5 + " UTC **" + messages[i].author.username + "**: " + messages[i].content.replace(/@everyone/gi, " ").replace(/@here/gi, " "));
 								}
 							})
 							break;
@@ -1035,51 +711,6 @@ Commands.names = {
   }
 }
 
-Commands.mention = {
-  name: "mention",
-  level: 3,
-  fn: function(bot, msg, suffix) {
-	role = msg.channel.server.roles.get("name", suffix);
-	if (role) {
-		for (var i = 0; i < msg.channel.server.members.length; i++) {
-			var mention = bot.memberHasRole(msg.channel.server.members[i], role)
-			if (mention) {
-				bot.sendMessage(msg.channel, msg.channel.server.members[i])
-			}
-		}
-		return;
-	}
-	else {
-		console.log("hi")
-		role = "";
-		var s = suffix.toLowerCase();
-		var sp = s.split("");
-		for (var i = 0, l = 1 << s.length; i < l; i++) {
-			for (var j = i, k = 0; j; j >>= 1, k++) {
-				sp[k] = (j & 1) ? sp[k].toUpperCase() : sp[k].toLowerCase();
-			}
-			var st = sp.join("");
-			//console.log(st)
-			role = msg.channel.server.roles.get("name", st);
-			if (role) {
-				role = msg.channel.server.roles.get("name", st);
-				break;
-			}
-		}
-	}
-	//console.log(role)
-	  //var role = msg.channel.server.roles.get("name", suffix);
-	  if (role) {
-		for (var i = 0; i < msg.channel.server.members.length; i++) {
-			var mention = bot.memberHasRole(msg.channel.server.members[i], role)
-			if (mention) {
-				bot.sendMessage(msg.channel, msg.channel.server.members[i])
-			}
-		}
-	  }
-  }
-}
-
 Commands.avatar = {
   name: "avatar",
   level: 0,
@@ -1101,6 +732,7 @@ Commands.punish = {
   name: "punish",
   level: 3,
   fn: function(bot, msg, suffix) {
+	if (msg.channel.isPrivate) return;
 	if (msg.mentions.length === 0) {
 		bot.sendMessage(msg.channel, "You didn't tell me who to punish!")
 		return;
@@ -1110,15 +742,14 @@ Commands.punish = {
 		return;
 	}
 	msg.mentions.map((user) => {
-		//if (user.id === msg.author.id) {
-		//	bot.sendMessage(msg.channel, "You can't punish yourself!")
-		//	return;
-		//}
+		if (user.id === msg.author.id) {
+			bot.sendMessage(msg.channel, "You can't punish yourself!")
+			return;
+		}
 		Permissions.GetPunishLevel((msg.channel.server.id + user.id), function(err, reply) {
 			console.log(reply.slice(0,1))
 			if (reply.slice(0,1).indexOf("0") > -1) {
 				Permissions.SetPunishLevel((msg.channel.server.id + user.id), "1"+suffix.replace("<@"+user.id+">", "")+msg.timestamp, function(err, allow) {
-					//console.log("hi: "+allow)
 					if (err) {
 						bot.reply(msg.channel, "An error occured.");
 						return;
@@ -1133,9 +764,12 @@ Commands.punish = {
 						Permissions.GetStafflog(msg.channel.server.id, function(err, reply) {
 							if (reply === "none") {}
 							else {
-							setTimeout(function(){ bot.sendMessage(reply, user+ " has been warned for the 1st time."); }, 100)
-							setTimeout(function(){ bot.sendMessage(reply, "Reason: "+reason); }, 200)
-							setTimeout(function(){ bot.sendMessage(reply, "Current punish level: 1"); }, 300)
+								var array = [];
+								array.push(user+ " has been warned for the 1st time.")
+								array.push("Reason: "+reason)
+								array.push("Current punish level: 1")
+								array.push("Punished by: "+msg.author)
+								bot.sendMessage(reply, array)
 							}
 						})
 					}
@@ -1161,9 +795,12 @@ Commands.punish = {
 						Permissions.GetStafflog(msg.channel.server.id, function(err, reply) {
 							if (reply === "none") {}
 							else {
-							setTimeout(function(){ bot.sendMessage(reply, user+ " has been warned for the 2nd time."); }, 100)
-							setTimeout(function(){ bot.sendMessage(reply, "Reason: "+reason); }, 200)
-							setTimeout(function(){ bot.sendMessage(reply, "Current punish level: 2"); }, 300)
+								var array = [];
+								array.push(user+ " has been warned for the 2nd time.")
+								array.push("Reason: "+reason)
+								array.push("Current punish level: 2")
+								array.push("Punished by: "+msg.author)
+								bot.sendMessage(reply, array)
 							}
 						})
 					}
@@ -1174,8 +811,8 @@ Commands.punish = {
 				});
 			}
 			if (reply.slice(0,1).indexOf("2") > -1) {
-				if (!msg.channel.permissionsOf(msg.author).hasPermission("managePermissions")) {
-					bot.sendMessage(msg.channel, "I don't have the correct permissions to mute!")
+				if (!msg.channel.permissionsOf(bot.user).hasPermission("managePermissions")) {
+					bot.sendMessage(msg.author, "I don't have the correct permissions to mute. For `!punish` (and other commands) to work correctly, please give me the correct permissions. I recommend you give me all permissions and move the role I'm in to the top of the roles list.")
 					return;
 				}
 				Permissions.SetPunishLevel((msg.channel.server.id + user.id), "3"+suffix.replace("<@"+user.id+">", "")+msg.timestamp, function(err, allow) {
@@ -1193,14 +830,16 @@ Commands.punish = {
 						Permissions.GetStafflog(msg.channel.server.id, function(err, reply) {
 							if (reply === "none") {}
 							else {
-							setTimeout(function(){ bot.sendMessage(reply, user+ " has been muted for the 1st time."); }, 100)
-							setTimeout(function(){ bot.sendMessage(reply, "Reason: "+reason); }, 200)
-							setTimeout(function(){ bot.sendMessage(reply, "Current punish level: 3"); }, 300)
+								var array = [];
+								array.push(user+ " has been muted for the 1st time.")
+								array.push("Reason: "+reason)
+								array.push("Current punish level: 3")
+								array.push("Punished by: "+msg.author)
+								bot.sendMessage(reply, array)
 							}
 						})
 						for (var i = 0, len = msg.channel.server.channels.length; i < len; i++) {
 							var channame = msg.channel.server.channels[i]
-							//var user = bot.users.get("name", msg.author.username)
 							bot.overwritePermissions(channame, user, { "sendMessages" : false, "managePermissions" : false }, (e) => {
 								if (e) {
 									bot.sendMessage(msg.channel, "Error overwriting permissions. `"+e+"`")
@@ -1216,8 +855,8 @@ Commands.punish = {
 				});
 			}
 			if (reply.slice(0,1).indexOf("3") > -1) {
-				if (!msg.channel.permissionsOf(msg.author).hasPermission("managePermissions")) {
-					bot.sendMessage(msg.channel, "I don't have the correct permissions to mute!")
+				if (!msg.channel.permissionsOf(bot.user).hasPermission("managePermissions")) {
+					bot.sendMessage(msg.author, "I don't have the correct permissions to mute. For `!punish` (and other commands) to work, please give me the correct permissions. I recommend you give me all permissions and move the role I'm in to the top of the roles list.")
 					return;
 				}
 				Permissions.SetPunishLevel((msg.channel.server.id + user.id), "4"+suffix.replace("<@"+user.id+">", "")+msg.timestamp, function(err, allow) {
@@ -1235,14 +874,16 @@ Commands.punish = {
 						Permissions.GetStafflog(msg.channel.server.id, function(err, reply) {
 							if (reply === "none") {}
 							else {
-							setTimeout(function(){ bot.sendMessage(reply, user+ " has been muted for the 2nd time."); }, 100)
-							setTimeout(function(){ bot.sendMessage(reply, "Reason: "+reason); }, 200)
-							setTimeout(function(){ bot.sendMessage(reply, "Current punish level: 4"); }, 300)
+								var array = [];
+								array.push(user+ " has been muted for the 2nd time.")
+								array.push("Reason: "+reason)
+								array.push("Current punish level: 4")
+								array.push("Punished by: "+msg.author)
+								bot.sendMessage(reply, array)
 							}
 						})
 						for (var i = 0, len = msg.channel.server.channels.length; i < len; i++) {
 							var channame = msg.channel.server.channels[i]
-							//var user = bot.users.get("name", msg.author.username)
 							bot.overwritePermissions(channame, user, { "sendMessages" : false, "managePermissions" : false }, (e) => {
 								if (e) {
 									bot.sendMessage(msg.channel, "Error overwriting permissions. `"+e+"`")
@@ -1258,8 +899,8 @@ Commands.punish = {
 				});
 			}
 			if (reply.slice(0,1).indexOf("4") > -1) {
-				if (!msg.channel.permissionsOf(msg.author).hasPermission("kickMembers")) {
-					bot.sendMessage(msg.channel, "I don't have the correct permissions to kick!")
+				if (!msg.channel.permissionsOf(bot.user).hasPermission("kickMembers")) {
+					bot.sendMessage(msg.author, "I don't have the correct permissions to kick. For `!punish` (and other commands) to work, please give me the correct permissions. I recommend you give me all permissions and move the role I'm in to the top of the roles list.")
 					return;
 				}
 				Permissions.SetPunishLevel((msg.channel.server.id + user.id), "5"+suffix.replace("<@"+user.id+">", "")+msg.timestamp, function(err, allow) {
@@ -1268,6 +909,12 @@ Commands.punish = {
 						return;
 					}
 					if (allow === "5"+suffix.replace("<@"+user.id+">", "")+msg.timestamp) {
+						bot.kickMember(user, msg.channel.server, function(err){
+							if (err) {
+								bot.sendMessage(msg.author, "Couldn't kick "+user+"\nIt is likely i couldn't kick them successfully because my highest role is not above "+user+"'s highest role. I recommend you move my role to the top of the role list to avoid any further issues.")
+								return;
+							}
+						})
 						bot.sendMessage(msg.channel, user+", has been kicked.")
 						var reason = suffix.replace("<@"+user.id+">", "")
 						if (reason === "" || reason === " ") {
@@ -1277,19 +924,24 @@ Commands.punish = {
 						Permissions.GetStafflog(msg.channel.server.id, function(err, reply) {
 							if (reply === "none") {}
 							else {
-							setTimeout(function(){ bot.sendMessage(reply, user+ " has been kicked"); }, 100)
-							setTimeout(function(){ bot.sendMessage(reply, "Reason: "+reason); }, 200)
-							setTimeout(function(){ bot.sendMessage(reply, "Current punish level: 5"); }, 300)
+								var array = [];
+								array.push(user+ " has been kicked")
+								array.push("Reason: "+reason)
+								array.push("Current punish level: 5")
+								array.push("Punished by: "+msg.author)
+								bot.sendMessage(reply, array)
 							}
 						})
-						bot.sendMessage(user, "You have been kicked. If you commit one more offense, you will be banned.")
-						setTimeout(function(){ bot.sendMessage(user, "The reason you were kicked: "+reason) }, 500)
+						var array = [];
+						array.push("You have been kicked. If you commit one more offense, you will be banned.")
+						array.push("Reason: "+reason)
+						array.push("The reason you were kicked: "+reason)
+						bot.sendMessage(user, array)
 						bot.createInvite(msg.channel, {"maxUses" : 1}, (err, res) => {
 							if (res) {
 								bot.sendMessage(user, "Here is an invite link to rejoin: "+res)
 							}
 						})
-						bot.kickMember(user, msg.channel.server)
 					}
 					else {
 						bot.reply(msg.channel, "An error occured.");
@@ -1298,8 +950,8 @@ Commands.punish = {
 				})
 			}
 			if (reply.slice(0,1).indexOf("5") > -1) {
-				if (!msg.channel.permissionsOf(msg.author).hasPermission("banMembers")) {
-					bot.sendMessage(msg.channel, "I don't have the correct permissions to ban!")
+				if (!msg.channel.permissionsOf(bot.user).hasPermission("banMembers")) {
+					bot.sendMessage(msg.author, "I don't have the correct permissions to ban. For `!punish` (and other commands) to work, please give me the correct permissions. I recommend you give me all permissions and move the role I'm in to the top of the roles list.")
 					return;
 				}
 				Permissions.SetPunishLevel((msg.channel.server.id + user.id), "5"+suffix.replace("<@"+user.id+">", "")+msg.timestamp, function(err, allow) {
@@ -1308,7 +960,12 @@ Commands.punish = {
 						return;
 					}
 					if (allow === "5"+suffix.replace("<@"+user.id+">", "")+msg.timestamp) {
-						bot.banMember(user, msg.channel.server)
+						bot.banMember(user, msg.channel.server, function(err){
+							if (err) {
+								bot.sendMessage(msg.author, "Couldn't ban "+user+"\nIt is likely i couldn't ban them successfully because my highest role is not above "+user+"'s highest role. I recommend you move my role to the top of the role list to avoid any further issues.")
+								return;
+							}
+						})
 						bot.sendMessage(msg.channel, user+", has been banned.")
 						bot.sendMessage(user, "You have been banned from "+msg.channel.server.name+".")
 						var reason = suffix.replace("<@"+user.id+">", "")
@@ -1319,9 +976,12 @@ Commands.punish = {
 						Permissions.GetStafflog(msg.channel.server.id, function(err, reply) {
 							if (reply === "none") {}
 							else {
-							setTimeout(function(){ bot.sendMessage(reply, user+ " has been banned."); }, 100)
-							setTimeout(function(){ bot.sendMessage(reply, "Reason: "+reason); }, 200)
-							setTimeout(function(){ bot.sendMessage(reply, "Current punish level: 6"); }, 300)
+								var array = [];
+								array.push(user+ " has been banned.")
+								array.push("Reason: "+reason)
+								array.push("Current punish level: 5")
+								array.push("Punished by: "+msg.author)
+								bot.sendMessage(reply, array)
 							}
 						})
 						setTimeout(function(){ bot.sendMessage(user, "The reason you were banned: "+reason) }, 500)
@@ -1357,14 +1017,16 @@ Commands.status = {
 					var punishlevel = reply.substring(0,1)
 					var lastwarning = reply.substring(1).slice(0, -13)
 				}
-				bot.sendMessage(msg.channel, "Current status for "+msg.author)
-				setTimeout(function(){ bot.sendMessage(msg.channel, "Punish level: "+punishlevel) }, 100)
+				var array = [];
+				array.push("Current status for "+msg.author)
+				array.push("Punish level: "+punishlevel)
 				if (lastwarning) {
-					setTimeout(function(){ bot.sendMessage(msg.channel, "Reason for latest punishment: "+lastwarning)}, 200)
+					array.push("Reason for latest punishment: "+lastwarning)
 				}
 				else {
-					setTimeout(function(){ bot.sendMessage(msg.channel, "Reason for latest punishment: None provided.")}, 200)
+					array.push("Reason for latest punishment: None provided.")
 				}
+				bot.sendMessage(msg.channel, array)
 			})
 			return;
 		}
@@ -1383,14 +1045,16 @@ Commands.status = {
 				var punishlevel = reply.substring(0,1)
 				var lastwarning = reply.substring(1).slice(0, -13)
 			}
-			bot.sendMessage(msg.channel, "Current status for "+user)
-			setTimeout(function(){ bot.sendMessage(msg.channel, "Punish level: "+punishlevel)}, 100)
+			var array = [];
+			array.push("Current status for "+msg.author)
+			array.push("Punish level: "+punishlevel)
 			if (lastwarning) {
-				setTimeout(function(){ bot.sendMessage(msg.channel, "Reason for latest punishment: "+lastwarning)}, 200)
+				array.push("Reason for latest punishment: "+lastwarning)
 			}
 			else {
-				setTimeout(function(){ bot.sendMessage(msg.channel, "Reason for latest punishment: None provided.")}, 200)
+				array.push("Reason for latest punishment: None provided.")
 			}
+			bot.sendMessage(msg.channel, array)
 		})
 	})
   }
@@ -1437,10 +1101,7 @@ Commands.mute = {
   name: "mute",
   level: 0,
   fn: function(bot, msg, suffix) {
-	if (msg.channel.isPrivate) {
-		bot.sendMessage(msg, "This command must be used on a server and not in a PM!")
-		return;
-	}
+	if (msg.channel.isPrivate) return;
 	if (!msg.channel.permissionsOf(bot.user).hasPermission("manageChannels")) { 
 		bot.sendMessage(msg, "I don't have the permission `Manage Channels`! I must have this permission for `!mute` to function correctly!")
 		return;
@@ -1454,7 +1115,7 @@ Commands.mute = {
 		return;
 	}
 	if (msg.mentions.length === 0) {
-		bot.sendMessage(msg, "You didn't mention a user to mute!")
+		bot.sendMessage(msg, "You didn't mention a user for me mute!")
 		return;
 	}
 	msg.mentions.map((user) => {
@@ -1462,22 +1123,22 @@ Commands.mute = {
 			bot.sendMessage(msg.channel, "You can't mute yourself!")
 			return;
 		}
+		var array = [];
 		for (var i = 0, len = msg.channel.server.channels.length; i < len; i++) {
 			var channame = msg.channel.server.channels[i]
-			//var user = bot.users.get("name", msg.author.username)
-			bot.overwritePermissions(channame, user, { "sendMessages" : false, "managePermissions" : false }, (e) => {
+			bot.overwritePermissions(channame, user, { "sendMessages" : false }, (e) => {
 				if (e) {
-					//bot.sendMessage(msg.channel, "Error overwriting permissions. `"+e+"`")
-					bot.sendMessage(msg.channel, "Couldn't mute "+user+" in "+channame)
-				}
-				else {
+					array.push("Couldn't mute "+user+" in "+channame)
 				}
 			})
+		}
+		if (array != []) {
+			bot.sendMessage(msg.author, array)
 		}
 	})
 	msg.mentions.map((user) => {
 		if (user.id === msg.author.id) {
-			//bot.sendMessage(msg.channel, "You can't mute yourself!")
+			bot.sendMessage(msg.channel, "You can't mute yourself!")
 			return;
 		}
 		bot.sendMessage(msg.channel, "Successfully muted "+user)
@@ -1485,7 +1146,7 @@ Commands.mute = {
 	if (!isNaN(suffix.split(" ")[1])) {
 		msg.mentions.map((user) => {
 			if (user.id === msg.author.id) {
-				//bot.sendMessage(msg.channel, "You can't mute yourself!")
+				bot.sendMessage(msg.channel, "You can't mute yourself!")
 				return;
 			}
 			bot.sendMessage(msg.channel, user+" will be automatically unmuted in "+suffix.split(" ")[1]+" minutes.")
@@ -1497,7 +1158,7 @@ Commands.mute = {
 	if (!isNaN(suffix.split(" ")[0])) {
 		msg.mentions.map((user) => {
 			if (user.id === msg.author.id) {
-				//bot.sendMessage(msg.channel, "You can't mute yourself!")
+				bot.sendMessage(msg.channel, "You can't mute yourself!")
 				return;
 			}
 			bot.sendMessage(msg.channel, user+" will be automatically unmuted in "+suffix.split(" ")[0]+" minutes.")
@@ -1510,13 +1171,10 @@ Commands.mute = {
 }
 
 Commands.unmute = {
-  name: "unmute",
+  name: "unmutetest",
   level: 0,
   fn: function(bot, msg, suffix) {
-	if (msg.channel.isPrivate) {
-		bot.sendMessage(msg, "This command must be used on a server and not in a PM!")
-		return;
-	}
+	if (msg.channel.isPrivate) return;
 	if (!msg.channel.permissionsOf(bot.user).hasPermission("manageRoles")) { 
 		bot.sendMessage(msg, "I don't have the permission `Manage Roles`! I must have this permission for `!unmute` to function correctly!")
 		return;
@@ -1536,7 +1194,6 @@ Commands.unmute = {
 	msg.mentions.map((user) => {
 		for (var i = 0, len = msg.channel.server.channels.length; i < len; i++) {
 			var channame = msg.channel.server.channels[i]
-			//var user = bot.users.get("name", msg.author.username)
 			var asdfasdf = msg.channel.server.channels.get("name", msg.channel.server.channels[i].name)
 			bot.overwritePermissions(channame, user, false)
 		}
@@ -1551,7 +1208,6 @@ function unmute (msg, bot, suffix) {
 	msg.mentions.map((user) => {
 		for (var i = 0, len = msg.channel.server.channels.length; i < len; i++) {
 			var channame = msg.channel.server.channels[i]
-			//var user = bot.users.get("name", msg.author.username)
 			var asdfasdf = msg.channel.server.channels.get("name", msg.channel.server.channels[i].name)
 			bot.overwritePermissions(channame, user, false)
 		}
@@ -1560,78 +1216,6 @@ function unmute (msg, bot, suffix) {
 		bot.sendMessage(msg.channel, user+" has been unmuted.")
 	})
 }
-
-Commands.announcement = {
-	name: "announcement",
-	level: 0,
-	fn: function(bot, msg, suffix) {
-		if (!suffix && msg.author.id == ConfigFile.permissions.masterUser) { 
-			bot.sendMessage(msg.channel, "You must specify a message to announce")
-			return;
-		}
-		if (msg.channel.isPrivate && msg.author.id == ConfigFile.permissions.masterUser) {
-			if (/^\d+$/.test(suffix)) {
-				var index = confirmCodes.indexOf(parseInt(suffix));
-				if (index == -1) { bot.sendMessage(msg, "Code not found", function(erro, wMessage) { bot.deleteMessage(wMessage, {"wait": 8000}); }); return; }
-				bot.sendMessage(msg, "Announcing to all servers, this may take a while...");
-				bot.servers.forEach((svr) => {
-					setTimeout(() => {
-						Permissions.GetAnnouncement(svr.id, function(err, reply) { 
-							if (reply === "on") {
-								bot.sendMessage(svr.defaultChannel, "📣 " + announceMessages[index] + " - from " + msg.author.username);
-								bot.sendMessage(svr.defaultChannel, "If you don't want to receive announcements, please use the command `!announcement off`.");
-							}
-						})
-					}, 1000);
-				});
-			} else {
-				announceMessages.push(suffix);
-				var code = Math.floor(Math.random() * 100000);
-				confirmCodes.push(code);
-				bot.sendMessage(msg, "⚠ This will send a message to **all** servers where I can speak in general. If you're sure you want to do this say `!announcement " + code + "`");
-			}
-		}
-		else {
-			if (!msg.channel.permissionsOf(msg.sender).hasPermission("manageServer")) {
-				bot.sendMessage(msg.channel, "You must have the permission `Manage Server` to turn announcements on or off.")
-				return;
-			}
-			if (msg.author.id != "98621941119750144" && msg.channel.permissionsOf(msg.sender).hasPermission("manageServer")) {
-				if (suffix === "off") {
-					Permissions.SetAnnouncement(msg.channel.server.id, "off", function(err, allow) {
-						if (err) {
-							bot.reply(msg.channel, "An error occured.");
-							return;
-						}
-						if (allow === "off") {
-							bot.sendMessage(msg.channel, "I will no longer send announcements to this server."); 
-						}
-						else {
-							bot.reply(msg.channel, "An error occured.");
-							return;
-						}
-					});
-				}
-			if (suffix === "on") {
-				Permissions.SetAnnouncement(msg.channel.server.id, "on", function(err, allow) {
-					if (err) {
-						bot.reply(msg.channel, "An error occured.");
-						return;
-					}
-					if (allow === "on") {
-						bot.sendMessage(msg.channel, "I will now send announcements on this server."); 
-					}
-					else {
-						bot.reply(msg.channel, "An error occured.");
-						return;
-					}
-				});
-			}
-			return;
-		}
-	}
-  }
-},
 
 Commands.twitchalert = {
 	name: "twitchalert",
@@ -1661,9 +1245,9 @@ Commands.twitchalert = {
 			}
 		}
 		if (index > -1) {
-			bot.sendMessage(msg.channel, "I will no longer notify you when "+suffix.toLowerCase()+" goes live.")
+			bot.sendMessage(msg.channel, "I will no longer notify you when "+suffix.toLowerCase()+" goes live in "+msg.channel)
 			twitchStreamers.items.splice(index, 1)
-			require("fs").writeFile("./runtime/streamers.json",JSON.stringify(twitchStreamers,null,2), null);
+			require("fs").writeFileSync("./runtime/streamers.json",JSON.stringify(twitchStreamers,null,2), null);
 		}
 		if (index === -1) {
 			var url = 'https://api.twitch.tv/kraken/streams/' + suffix.toLowerCase();
@@ -1673,7 +1257,7 @@ Commands.twitchalert = {
 					bot.sendMessage(msg.channel, "I will now notify you in "+msg.channel+" when "+suffix.toLowerCase()+" goes live.")
 					var testing123 = {"stream": suffix.toLowerCase(), "channel": msg.channel.id, "status": false}
 					twitchStreamers.items.push(testing123)
-					require("fs").writeFile("./runtime/streamers.json",JSON.stringify(twitchStreamers,null,2), null);
+					require("fs").writeFileSync("./runtime/streamers.json",JSON.stringify(twitchStreamers,null,2), null);
 				}
 				else {
 					bot.sendMessage(msg.channel, "That name doesn't exist.");
@@ -1688,24 +1272,34 @@ Commands.createcommand = {
 	name: "createcommand",
 	level: 3,
 	fn: function(bot, msg, suffix) {
+		if (msg.channel.isPrivate) return;
 		if (!suffix) {
 			bot.sendMessage(msg.channel, "Syntax error. Correct usage: `!createcommand <command name> | <text>`. Command name cannot contain spaces.")
 			return;
 		}
-		customcom = suffix.split(" ")[0].toLowerCase();
-		customresponse = suffix.replace(customcom+ " | ", "").trim();
+		var customcom = suffix.split(" ")[0].toLowerCase();
+		var customresponse = suffix.replace(customcom+ " | ", "").trim();
 		if(Commands[customcom] || customcom === "help"){
 			bot.sendMessage(msg.channel,"Overwriting commands with custom commands is not allowed!");
 			return;
 		}
+		for (var i = 0; i < cccoms.items.length; i++) {
+			if (cccoms.items[i].server === msg.channel.server.id) {
+				if (cccoms.items[i].command === customcom) {
+					var commandexists = true;
+				}
+			}
+		}
 		if(suffix.indexOf(" | ") < 0) {
-			customresponse = ""
+			bot.sendMessage(msg.channel, "Syntax error. Correct usage: `!createcommand <command name> | <text>`. Command name cannot contain spaces.")
+			return;
 		}
 		if (customresponse === undefined) {
-			customresponse = ""
+			bot.sendMessage(msg.channel, "Syntax error. Correct usage: `!createcommand <command name> | <text>`. Command name cannot contain spaces.")
+			return;
 		}
-		if (customresponse === "") {
-			bot.sendMessage(msg.channel, "Command `"+customcom+"` has been deleted.")
+		if (commandexists) {
+			bot.sendMessage(msg.channel, "Command `"+customcom+"` updated with new response: "+customresponse)
 		}
 		else {
 			bot.sendMessage(msg.channel, "Command `"+customcom+"` created with response: "+customresponse)
@@ -1715,12 +1309,43 @@ Commands.createcommand = {
 			customsearch(testing1234, msg, command);
 			if  (lll === 1) return;
 		});
-		//console.log(lll)
 		if (lll != 1) {
 			customcommands.items.push(testing1234)
 		}
-		require("fs").writeFile("./runtime/ccommands.json",JSON.stringify(customcommands,null,2), null);
+		require("fs").writeFileSync("./runtime/ccommands.json",JSON.stringify(customcommands,null,2), null);
 		lll = 0;
+	}
+}
+
+Commands.deletecommand = {
+	name: "deletecommand",
+	level: 3,
+	fn: function(bot, msg, suffix) {
+		if (msg.channel.isPrivate) return;
+		if (!suffix) {
+			bot.sendMessage(msg.channel, "You didn't specify a command for me to delete."); 
+			return;
+		}
+		var customcom = suffix.split(" ")[0].toLowerCase();
+		for (var i = 0; i < cccoms.items.length; i++) {
+			if (cccoms.items[i].server === msg.channel.server.id) {
+				if (cccoms.items[i].command === customcom) {
+					var commandexists = true;
+					break;
+				}
+			}
+		}
+		if (!commandexists) {
+			bot.sendMessage(msg.channel, "That command doesn't exist!"); 
+			return;
+		}
+		else {
+			var testing1234 = cccoms.items[i]
+			bot.sendMessage(msg.channel, "Deleted command **"+testing1234.command+"**")
+			cccoms.items.splice(i, 1)
+			require("fs").writeFileSync("./runtime/ccommands.json",JSON.stringify(customcommands,null,2), null);
+			return;
+		}
 	}
 }
 
@@ -1728,7 +1353,6 @@ function customsearch (testing1234, msg, command) {
 	for (var i = 0; i < cccoms.items.length; i++) {
 		if (cccoms.items[i].server === testing1234.server) {
 			if (cccoms.items[i].command === testing1234.command) {
-				//delete cccoms.items[i]
 				cccoms.items[i].command = testing1234.command
 				cccoms.items[i].server = testing1234.server
 				cccoms.items[i].response = testing1234.response
@@ -1743,20 +1367,21 @@ Commands.alias = {
   help: "Allows for creating quick custom commands on the fly!",
   level: 5,
   fn: function(bot, msg, suffix) {
-			var args = suffix.split(" ");
-			var name = args.shift();
-			if(!name){
-				return;
-			} else if(Commands[name] || name === "help"){
-				bot.sendMessage(msg.channel,"Overwriting commands with aliases is not allowed!");
-			} else {
-				var command = args.shift();
-				aliases[name] = [command, args.join(" ")];
-				//now save the new alias
-				require("fs").writeFile("./runtime/alias.json",JSON.stringify(aliases,null,2), null);
-				bot.sendMessage(msg.channel,"Created alias " + name);
-			}
+	    if (msg.channel.isPrivate) return;
+		var args = suffix.split(" ");
+		var name = args.shift();
+		if(!name){
+			return;
+		} else if(Commands[name] || name === "help"){
+			bot.sendMessage(msg.channel,"Overwriting commands with aliases is not allowed!");
+		} else {
+			var command = args.shift();
+			aliases[name] = [command, args.join(" ")];
+			//now save the new alias
+			require("fs").writeFileSync("./runtime/alias.json",JSON.stringify(aliases,null,2), null);
+			bot.sendMessage(msg.channel,"Created alias " + name);
 		}
+	}
 };
 
 Commands.announce = {
@@ -1765,6 +1390,7 @@ Commands.announce = {
   extendedhelp: "",
   level: 3,
   fn: function(bot, msg, suffix) {
+	if (msg.channel.isPrivate) return;
 	Permissions.GetAnnounce(msg.channel.id, function(err, reply) {
 		if (reply === "off") {
 			Permissions.SetAnnounce(msg.channel.id, "on", function(err, allow) {
@@ -1806,6 +1432,7 @@ Commands.joinmessage = {
   extendedhelp: "Gives a link to a list of songs",
   level: 3,
   fn: function(bot, msg, suffix) {
+	  if (msg.channel.isPrivate) return;
       if (!suffix) {
 		  bot.sendMessage(msg.channel, "The join message cannot be blank. If you wish to disable join messages, use `!announce` in the channel you want to disable join/leave/ban announce messages.")
 	  }
@@ -1836,52 +1463,14 @@ Commands.joinmessage = {
 	  }
     }
   },
-  
-/*Commands.imgtest = {
-  name: "imgtest",
-  level: 0,
-  fn: function(bot, msg, suffix) {
-	  console.log("hi")
-	var size = 240 - (suffix.length * 4.5);
-	gm('/root/WildBeast-master/runtime/lewd.png')
-	.font('/root/WildBeast-master/runtime/animeace.ttf', size)
-	.gravity('Center')
-	//.fill("#143A47")
-	.stroke("#043656", 10)
-    .drawText(-140, 440, suffix)
-	.write('/root/WildBeast-master/runtime/lewd1.png', function (err) {
-		console.log(err)
-		if (!err) bot.sendFile(msg.channel, '/root/WildBeast-master/runtime/lewd1.png')
-	});
-　　}
-}
-
-Commands.nobully = {
-  name: "nobully",
-  level: 0,
-  fn: function(bot, msg, suffix) {
-	  console.log("hi")
-	var size = 240 - (suffix.length * 4.5);
-	gm('/root/WildBeast-master/runtime/nobully.png')
-	.font('/root/WildBeast-master/runtime/calibri.ttf', size)
-	.gravity('Center')
-	//.fill("#143A47")
-	.fill("white")
-	.stroke("#043656", 5)
-    .drawText(-140, 440, suffix)
-	.write('/root/WildBeast-master/runtime/nobully1.png', function (err) {
-		console.log(err)
-		if (!err) bot.sendFile(msg.channel, '/root/WildBeast-master/runtime/nobully1.png')
-	});
-　　}
-}*/
-  
+    
 Commands.leavemessage = {
   name: "leavemessage",
   description: "Gives a link to a list of songs",
   extendedhelp: "Gives a link to a list of songs",
   level: 3,
   fn: function(bot, msg, suffix) {
+	  if (msg.channel.isPrivate) return;
       if (!suffix) {
 		  bot.sendMessage(msg.channel, "The leave message cannot be blank. If you wish to disable leave messages, use `!announce` in the channel you want to disable join/leave/ban announcements.")
 	  }
@@ -1919,10 +1508,7 @@ Commands.pmmentions = {
   extendedhelp: "",
   level: 0,
   fn: function(bot, msg, suffix) {
-	if (msg.channel.isPrivate) { 
-		bot.sendMessage(msg, "Use this command on the server you want to stop receiving pmmentions from!")
-		return;
-	}
+	if (msg.channel.isPrivate) return;
 	Permissions.GetPmMentions((msg.channel.server.id + msg.author.id), function(err, reply) {
 		if (reply === "on") {
 			Permissions.SetPmMentions((msg.channel.server.id + msg.author.id), "off", function(err, allow) {
@@ -1967,30 +1553,11 @@ Commands.pls = {
 	  }
     }
 	
-Commands.setname = {
-	name: "setname",
-	level: 5,
-	fn: function(bot, msg, suffix) {
-		if (!suffix) {
-			bot.sendMessage(msg.channel, "You didn't give me a name to change to!");
-			return;
-		}
-		var newUsername = suffix
-		bot.updateDetails({username:newUsername}, (e) => { 
-			if (e) {
-				bot.sendMessage(msg.channel, "Error settings username. `"+e+"`");
-			}
-			else {
-			bot.sendMessage(msg.channel, "Username changed to: " + newUsername);
-			}
-		})
-	}
-}
-
 Commands.addchannel = {
 	name: "addchannel",
 	level: 0,
 	fn: function(bot, msg, suffix) {
+		if (msg.channel.isPrivate) return;
 		if (!msg.channel.permissionsOf(msg.author).hasPermission("manageChannels")) { 
 			bot.sendMessage(msg, "You don't have the permission `Manage Channels`! You must have this permission to use `!addchannel`")
 			return;
@@ -1999,14 +1566,30 @@ Commands.addchannel = {
 			bot.sendMessage(msg, "I don't have the permission `Manage Channels`! I must have this permission for `!addchannel` to function correctly!")
 			return;
 		}
-		var channame = suffix.split(" ")[0];
-		var chantype = suffix.split(" ")[1];
-		if (suffix.split(" ").length > 2) {
-			bot.sendMessage(msg.channel, "Couldn't create channel. Please note that channel names cannot have spaces. Correct usage: `!addchannel gaming text`.")
+		channame = "";
+		chantype = "";
+		suffixlen = suffix.split(" ").length
+		for (var i = 0; i < suffixlen; i++) {
+			if (i === suffixlen - 1) {
+				chantype = suffix.split(" ")[i];
+				break;
+			}
+			else {
+				channame = channame + " " + suffix.split(" ")[i]
+			}
+		}
+		channame = channame.trim();
+		chantype = chantype.trim();
+		if (suffix.split(" ").length > 2 && chantype === "text") {
+			bot.sendMessage(msg.channel, "Couldn't create channel. Please note that text channel names cannot have spaces. Correct usage: `!addchannel gaming text`.")
 			return;
 		}
 		if (chantype != "text" && chantype != "voice") {
-			bot.sendMessage(msg.channel, "Channel type must either be text or voice. Please note that channel names cannot have spaces. Correct usage: `!addchannel gaming text`.")
+			bot.sendMessage(msg.channel, "Channel type must either be text or voice. Please note that text channel names cannot have spaces. Correct usage: `!addchannel gaming text`.")
+			return;
+		}
+		if (channame.length > 100) {
+			bot.sendMessage(msg.channel, "The maximum length of a voice channel name is 100 characters!")
 			return;
 		}
 		bot.createChannel(msg.channel.server.id, channame, chantype, (e) => {
@@ -2024,6 +1607,7 @@ Commands.topic = {
 	name: "topic",
 	level: 0,
 	fn: function(bot, msg, suffix) {
+		if (msg.channel.isPrivate) return;
 		if (!msg.channel.permissionsOf(msg.author).hasPermission("manageChannels")) { 
 			bot.sendMessage(msg, "You don't have the permission `Manage Channels`! You must have this permission to use `!topic`")
 			return;
@@ -2033,6 +1617,10 @@ Commands.topic = {
 			return;
 		}
 		var chantopic = suffix;
+		if (chantopic.length > 1024) {
+			bot.sendMessage(msg.channel, "The max length of a topic is 1024 characters!")
+			return;
+		}
 		bot.setChannelTopic(msg.channel, chantopic, (e) => { 
 			if (e) {
 				bot.sendMessage(msg.channel, "Error setting channel topic. `"+e+"`") 
@@ -2048,6 +1636,7 @@ Commands.delchannel = {
 	name: "delchannel",
 	level: 0,
 	fn: function(bot, msg, suffix) {
+		if (msg.channel.isPrivate) return;
 		if (!msg.channel.permissionsOf(msg.author).hasPermission("manageChannels")) { 
 			bot.sendMessage(msg, "You don't have the permission `Manage Channels`! You must have this permission to use `!delchannel`")
 			return;
@@ -2057,177 +1646,42 @@ Commands.delchannel = {
 			return;
 		}
 		delchannel = "";
-		var s = suffix.split(" ")[0].toLowerCase();
+		var s = suffix.toLowerCase();
 		var sp = s.split("");
 		for (var i = 0, l = 1 << s.length; i < l; i++) {
 			for (var j = i, k = 0; j; j >>= 1, k++) {
 				sp[k] = (j & 1) ? sp[k].toUpperCase() : sp[k].toLowerCase();
 			}
 			var st = sp.join("");
-			//console.log(st)
 			delchannel = msg.channel.server.channels.get("name", st);
 			if (delchannel) {
 				delchannel = msg.channel.server.channels.get("name", st);
 				break;
 			}
 		}			
-			if(suffix.split(" ").length > 1) {
-				bot.sendMessage(msg.channel, "Channel names don't contain spaces.")
-				return;
-			}
-			if (!delchannel) {
-				bot.sendMessage(msg.channel, "Couldn't find channel.")
-				return;
-			}
-			bot.deleteChannel(delchannel, (e) => {
+		if (!delchannel) {
+			bot.sendMessage(msg.channel, "Couldn't find channel.")
+			return;
+		}
+		bot.deleteChannel(delchannel, (e) => {
 			if (e) {
 				bot.sendMessage(msg.channel, "Error deleting channel. `"+e+"`")
 			}
 			else {
-			bot.sendMessage(msg.channel, "Successfully deleted "+suffix.split(" ")[0])
+			bot.sendMessage(msg.channel, "Successfully deleted `"+suffix+"`")
 			}
 		})
 	}
-}
-
-Commands.color = {
-	name: "color",
-	level: 0,
-	fn: function(bot, msg, suffix) {
-			if (msg.channel.isPrivate) { 
-			bot.sendMessage(msg, "This command must be used on a server and not in a PM!")
-			return;
-			}
-			if (!msg.channel.permissionsOf(msg.author).hasPermission("manageRoles")) { 
-				bot.sendMessage(msg, "You don't have the permission `Manage Roles`! You must have this permission to use `!color`")
-				return;
-			}
-			if (!msg.channel.permissionsOf(bot.user).hasPermission("manageRoles")) { 
-				bot.sendMessage(msg, "I don't have the permission `Manage Roles`! I must have this permission for `!color` to function correctly!")
-				return;
-			}
-			var role1 = suffix.replace("_", " ").replace(/ #?[a-f0-9]{6}/i, "");
-			if (role1.indexOf("_") > -1) {
-				role1 = role1.replace("_", " ")
-			}
-			if (role1.indexOf("_") > -1) {
-				role1 = role1.replace("_", " ")
-			}
-			if (role1.indexOf("_") > -1) {
-				role1 = role1.replace("_", " ")
-			}
-			if (role1.indexOf("_") > -1) {
-				role1 = role1.replace("_", " ")
-			}
-			if (role1.indexOf("_") > -1) {
-				role1 = role1.replace("_", " ")
-			}
-			if (role1.indexOf("_") > -1) {
-				role1 = role1.replace("_", " ")
-			}
-			var role2 = role1.slice(0, -7);
-			var suffix1 = suffix.split(" ")[1]
-			var suffix2 = suffix.split(" ")[2]
-			var suffix3 = suffix.split(" ")[3]
-			var suffix4 = suffix.split(" ")[4]
-			var suffix5 = suffix.split(" ")[5]
-			var suffix6 = suffix.split(" ")[6]
-			var suffix7 = suffix.split(" ")[7]
-			if (/^#[0-9A-F]{6}$/i.test(suffix1)) {
-				suffix = suffix1;
-			}
-			else if (/^#[0-9A-F]{6}$/i.test(suffix2)) {
-				suffix = suffix2;
-			}
-			else if (/^#[0-9A-F]{6}$/i.test(suffix3)) {
-				suffix = suffix3;
-			}
-			else if (/^#[0-9A-F]{6}$/i.test(suffix4)) {
-				suffix = suffix4;
-			}
-			else if (/^#[0-9A-F]{6}$/i.test(suffix5)) {
-				suffix = suffix5;
-			}
-			else if (/^#[0-9A-F]{6}$/i.test(suffix6)) {
-				suffix = suffix6;
-			}
-			else if (/^#[0-9A-F]{6}$/i.test(suffix7)) {
-				suffix = suffix7;
-			}
-			else if (/^[0-9A-F]{6}$/i.test(suffix1)) {
-				suffix = suffix1;
-			}
-			else if (/^[0-9A-F]{6}$/i.test(suffix2)) {
-				suffix = suffix2;
-			}
-			else if (/^[0-9A-F]{6}$/i.test(suffix3)) {
-				suffix = suffix3;
-			}
-			else if (/^[0-9A-F]{6}$/i.test(suffix4)) {
-				suffix = suffix4;
-			}
-			else if (/^[0-9A-F]{6}$/i.test(suffix5)) {
-				suffix = suffix5;
-			}
-			else if (/^[0-9A-F]{6}$/i.test(suffix6)) {
-				suffix = suffix6;
-			}
-			else if (/^[0-9A-F]{6}$/i.test(suffix7)) {
-				suffix = suffix7;
-			}
-			if (suffix[0] === "#") {
-				suffix = suffix.replace("#", "")
-			}
-			if (suffix.split(" ").length != 1) {
-				bot.sendMessage(msg.channel,  "That doesn't appear to be a hexadecimal color!")
-				return;
-			}
-			if (suffix.length != 6) {
-				bot.sendMessage(msg.channel, "That doesn't appear to be a hexadecimal color.")
-				return;
-			}
-			role = "";
-			var s = role1.toLowerCase();
-			var sp = s.split("");
-			for (var i = 0, l = 1 << s.length; i < l; i++) {
-				for (var j = i, k = 0; j; j >>= 1, k++) {
-					sp[k] = (j & 1) ? sp[k].toUpperCase() : sp[k].toLowerCase();
-				}
-				var st = sp.join("");
-				//console.log(st)
-				role = msg.channel.server.roles.get("name", st);
-				if (role) {
-					role = msg.channel.server.roles.get("name", st);
-					break;
-				}
-			}
-			if (role) { 
-				bot.updateRole(role, {color: parseInt(suffix.replace(/(.*) #?/, ""), 16)}, (e) => {
-					if (e) {
-						bot.sendMessage(msg.channel, "Error changing role color. `"+e+"`")
-					}
-					else {
-						bot.sendMessage(msg, "Successfully changed `"+role.name+"`'s color to `"+suffix+"`")
-					}
-			}) 
-			}
-			else { 
-			bot.sendMessage(msg, "Role \"" + role1 + "\" not found")
-			}
-}
 }
 
 Commands.add2dnsfw = {
 	name: "add2dnsfw",
 	level: 0,
 	fn: function(bot, msg, suffix, user) {
-		if (msg.channel.isPrivate) {
-			bot.sendMessage(msg, "This command must be used on a server and not in a PM!")
-			return;
-		}
+		if (msg.channel.isPrivate) return;
 		if (!msg.channel.permissionsOf(bot.user).hasPermission("manageRoles")) { 
-				bot.sendMessage(msg, "I don't have the permission `Manage Roles`! I must have this permission for `!addnsfw` to function correctly!")
-				return;
+			bot.sendMessage(msg, "I don't have the permission `Manage Roles`! I must have this permission for `!addnsfw` to function correctly!")
+			return;
 		}
 		if (!msg.channel.permissionsOf(msg.author).hasPermission("manageRoles")) { 
 			if (msg.mentions.length > 0) { 
@@ -2285,10 +1739,7 @@ Commands.add3dnsfw = {
 	name: "add3dnsfw",
 	level: 0,
 	fn: function(bot, msg, suffix, user) {
-		if (msg.channel.isPrivate) {
-			bot.sendMessage(msg, "This command must be used on a server and not in a PM!")
-			return;
-		}
+		if (msg.channel.isPrivate) return;
 		if (!msg.channel.permissionsOf(bot.user).hasPermission("manageRoles")) { 
 				bot.sendMessage(msg, "I don't have the permission `Manage Roles`! I must have this permission for `!addnsfw` to function correctly!")
 				return;
@@ -2349,10 +1800,7 @@ Commands.addhg = {
 	name: "addhg",
 	level: 0,
 	fn: function(bot, msg, suffix, user) {
-		if (msg.channel.isPrivate) {
-			bot.sendMessage(msg, "This command must be used on a server and not in a PM!")
-			return;
-		}
+		if (msg.channel.isPrivate) return;
 		if (!msg.channel.permissionsOf(msg.author).hasPermission("manageRoles")) { 
 			return;
 			}
@@ -2383,10 +1831,7 @@ Commands.addbgo = {
 	name: "addbgo",
 	level: 0,
 	fn: function(bot, msg, suffix, user) {
-		if (msg.channel.isPrivate) {
-			bot.sendMessage(msg, "This command must be used on a server and not in a PM!")
-			return;
-		}
+		if (msg.channel.isPrivate) return;
 		if (!msg.channel.permissionsOf(msg.author).hasPermission("manageRoles")) { 
 			return;
 			}
@@ -2413,14 +1858,11 @@ Commands.addbgo = {
 }
 }
 
-Commands.delnsfw = {
-	name: "delnsfw",
+Commands.del2dnsfw = {
+	name: "del2dnsfw",
 	level: 0,
 	fn: function(bot, msg, suffix, user) {
-		if (msg.channel.isPrivate) {
-			bot.sendMessage(msg, "This command must be used on a server and not in a PM!")
-			return;
-		}
+		if (msg.channel.isPrivate) return;
 		if (!msg.channel.permissionsOf(bot.user).hasPermission("manageRoles")) { 
 				bot.sendMessage(msg, "I don't have the permission `Manage Roles`! I must have this permission for `!delnsfw` to function correctly!")
 				return;
@@ -2431,39 +1873,97 @@ Commands.delnsfw = {
 				return;
 			}
 			user = msg.author.id;
-			var role = msg.channel.server.roles.get("name", "Channel Role - NSFW");
+			var role = msg.channel.server.roles.get("name", "Channel Role - 2D NSFW");
 			if (role) {
 				bot.removeMemberFromRole(user, role, (e) => { 
 					if (e) { 
-						bot.sendMessage(msg.channel, "Error removing "+user+" from `Channel Role - NSFW`!` "+e+"`") 
+						bot.sendMessage(msg.channel, "Error removing "+user+" from `Channel Role - 2D NSFW`!` "+e+"`") 
 					}
 					else {
-						bot.sendMessage(msg.channel, "Successfully removed <@"+user+"> from `Channel Role - NSFW`!")
+						bot.sendMessage(msg.channel, "Successfully removed <@"+user+"> from `Channel Role - 2D NSFW`!")
 					}
 				})
 			}
 			else {
-			bot.sendMessage(msg, "The `Channel Role - NSFW` role doesn't exist!")
+			bot.sendMessage(msg, "The `Channel Role - 2D NSFW` role doesn't exist!")
 			}
 			return;}
 		if (msg.mentions.length < 1) { 
 			bot.sendMessage(msg.channel, "You must mention the users you want to add the NSFW to!")
 			return;
 		}
-		var role = msg.channel.server.roles.get("name", "Channel Role - NSFW");
+		var role = msg.channel.server.roles.get("name", "Channel Role - 2D NSFW");
 		if (role) {
 		msg.mentions.map((user) => {
 				bot.removeMemberFromRole(user, role, (e) => { if (e) { 
-				bot.sendMessage(msg, "Error removing "+user+" from `Channel Role - NSFW`!` "+e+"`") }
+				bot.sendMessage(msg, "Error removing "+user+" from `Channel Role - 2D NSFW`!` "+e+"`") }
 				else {
-				bot.sendMessage(msg, "Successfully removed "+user+" from `Channel Role - NSFW`!")
+				bot.sendMessage(msg, "Successfully removed "+user+" from `Channel Role - 2D NSFW`!")
 				}
 			})
 		})
 		}
 		else {
 			var msgArray = [];
-			msgArray.push("The role `Channel Role - NSFW` doesn't exist!")
+			msgArray.push("The role `Channel Role - 2D NSFW` doesn't exist!")
+			msgArray.push("This command doesn't do anything if it doesn't exist.")
+			msgArray.push("If you just want a public #nsfw text channel, just use `!setnsfw on` in that text channel.")
+			msgArray.push("")
+			msgArray.push("Create this role and then give it the permission to `Read Messages` in a text channel. http://i.imgur.com/LpzIr7b.png")
+			msgArray.push("Remember to remove the permission `Read Messages` from everyone so they can't the text channel!! http://i.imgur.com/i0dzFoU.png")
+			bot.sendMessage(msg.author, msgArray)
+			}
+}
+}
+
+Commands.del3dnsfw = {
+	name: "del3dnsfw",
+	level: 0,
+	fn: function(bot, msg, suffix, user) {
+		if (msg.channel.isPrivate) return;
+		if (!msg.channel.permissionsOf(bot.user).hasPermission("manageRoles")) { 
+				bot.sendMessage(msg, "I don't have the permission `Manage Roles`! I must have this permission for `!delnsfw` to function correctly!")
+				return;
+			}
+		if (!msg.channel.permissionsOf(msg.author).hasPermission("manageRoles")) { 
+			if (msg.mentions.length > 0) { 
+				bot.sendMessage(msg.channel, "You mentioned another user. Since you don't have the permission to edit roles, you can't change other users roles!")
+				return;
+			}
+			user = msg.author.id;
+			var role = msg.channel.server.roles.get("name", "Channel Role - 3D NSFW");
+			if (role) {
+				bot.removeMemberFromRole(user, role, (e) => { 
+					if (e) { 
+						bot.sendMessage(msg.channel, "Error removing "+user+" from `Channel Role - 3D NSFW`!` "+e+"`") 
+					}
+					else {
+						bot.sendMessage(msg.channel, "Successfully removed <@"+user+"> from `Channel Role - 3D NSFW`!")
+					}
+				})
+			}
+			else {
+			bot.sendMessage(msg, "The `Channel Role - 3D NSFW` role doesn't exist!")
+			}
+			return;}
+		if (msg.mentions.length < 1) { 
+			bot.sendMessage(msg.channel, "You must mention the users you want to add the NSFW to!")
+			return;
+		}
+		var role = msg.channel.server.roles.get("name", "Channel Role - 3D NSFW");
+		if (role) {
+		msg.mentions.map((user) => {
+				bot.removeMemberFromRole(user, role, (e) => { if (e) { 
+				bot.sendMessage(msg, "Error removing "+user+" from `Channel Role - 3D NSFW`!` "+e+"`") }
+				else {
+				bot.sendMessage(msg, "Successfully removed "+user+" from `Channel Role - 3D NSFW`!")
+				}
+			})
+		})
+		}
+		else {
+			var msgArray = [];
+			msgArray.push("The role `Channel Role - 3D NSFW` doesn't exist!")
 			msgArray.push("This command doesn't do anything if it doesn't exist.")
 			msgArray.push("If you just want a public #nsfw text channel, just use `!setnsfw on` in that text channel.")
 			msgArray.push("")
@@ -2478,78 +1978,102 @@ Commands.coloruser = {
 	name: "coloruser",
 	level: 0,
 	fn: function(bot, msg, suffix, user) {
-		if (msg.channel.isPrivate) {
-			bot.sendMessage(msg, "This command must be used on a server and not in a PM!")
-			return;
-		}
+		if (msg.channel.isPrivate) return;
 		if (!msg.channel.permissionsOf(bot.user).hasPermission("manageRoles")) { 
 			bot.sendMessage(msg, "I don't have the permission `Manage Roles`! I must have this permission for `!coloruser` to function correctly!")
 			return;
 		}
 		if (!msg.channel.permissionsOf(msg.author).hasPermission("manageRoles")) { 
-			if (msg.mentions.length > 0) {
-				bot.sendMessage(msg, "You don't have the permission `Manage Roles`! You cannot change another users color!")
-				return;
-			}
-			if (suffix.toLowerCase().indexOf("random") > -1) {
-				suffix = "000000".replace(/0/g,function(){return (~~(Math.random()*16)).toString(16);});
-			}
-			suffixtest = /^#[a-f0-9]{6}$/i.test(suffix);
-			if (suffix.length === 7 && !suffixtest) {
-				bot.sendMessage(msg.channel, "That doesn't appear to be a valid hex color.")
-				return;
-			}
-			suffixtest = /^[a-f0-9]{6}$/i.test(suffix);
-			//console.log(suffixtest)
-			if (suffix.length === 6 && !suffixtest) {
-				bot.sendMessage(msg.channel, "That doesn't appear to be a valid hex color.")
-				return;
-			}
-			if (suffix.length < 6 || suffix.length > 7) {
-					bot.sendMessage(msg.channel, "That doesn't appear to be a valid hex color.")
-					return;
-			}
-			user = msg.author;
-			suffix = suffix.replace("#", "");
-			var role = msg.channel.server.roles.get("name", "CColour - " + suffix.replace(/(.*) #?/, "").toLowerCase() );
-			var roleExists = false;
-			if (role) { roleExists = true; }
-			msg.channel.server.rolesOfUser(user).map((r) => {
-				if (r) {
-					if (/^CColour - [a-f0-9]{6}$/i.test(r.name)) {
-						removerole(user, r, suffix, bot, msg)
+			Permissions.GetColorUser(msg.channel.server.id, function(err, reply) {
+				if (reply === "on") {
+					if (msg.mentions.length > 0) {
+						bot.sendMessage(msg, "You don't have the permission `Manage Roles`! You cannot change another users color!")
+						return;
 					}
-					else if (/^CColour - #[a-f0-9]{6}$/i.test(r.name)) {
-						removerole(user, r, suffix, bot, msg)
+					if (suffix.toLowerCase().indexOf("random") > -1) {
+						suffix = "000000".replace(/0/g,function(){return (~~(Math.random()*16)).toString(16);});
+					}
+					suffixtest = /^#[a-f0-9]{6}$/i.test(suffix);
+					if (suffix.length === 7 && !suffixtest) {
+						bot.sendMessage(msg.channel, "That doesn't appear to be a valid hex color.")
+						return;
+					}
+					suffixtest = /^[a-f0-9]{6}$/i.test(suffix);
+					if (suffix.length === 6 && !suffixtest) {
+						bot.sendMessage(msg.channel, "That doesn't appear to be a valid hex color.")
+						return;
+					}
+					if (suffix.length < 6 || suffix.length > 7) {
+							bot.sendMessage(msg.channel, "That doesn't appear to be a valid hex color.")
+							return;
+					}
+					user = msg.author;
+					suffix = suffix.replace("#", "");
+					var role = msg.channel.server.roles.get("name", "CColour - " + suffix.replace(/(.*) #?/, "").toLowerCase() );
+					var roleExists = false;
+					if (role) { roleExists = true; }
+					msg.channel.server.rolesOfUser(user).map((r) => {
+						if (r) {
+							if (/^CColour - [a-f0-9]{6}$/i.test(r.name)) {
+								removerole(user, r, suffix, bot, msg)
+							}
+							else if (/^CColour - #[a-f0-9]{6}$/i.test(r.name)) {
+								removerole(user, r, suffix, bot, msg)
+							}
+						}
+					});
+					if (roleExists) {
+						 setTimeout(function() { bot.addMemberToRole(user, role, (e) => { 
+							if (e) { 
+								bot.sendMessage(msg, "Error giving member role.` "+e+"`") 
+							}
+							else {
+								bot.sendMessage(msg, "Successfully set!")
+							}
+						});  }, 500);
+					} 
+					else {
+						msg.channel.server.createRole({color: parseInt(suffix.replace(/(.*) #?/, ""), 16), hoist: false, permissions: [], name: "CColour - " + suffix.replace(/(.*) #?/, "").toLowerCase() }, (e, rl) => {
+							if (e) { bot.sendMessage(msg, "Error creating role. `"+e+"`"); return; }
+							role = rl;
+							roleExists = true;
+							bot.addMemberToRole(user, role, (e) => { 
+								if (e) { 
+									bot.sendMessage(msg, "Error giving member role. `"+e+"`"); 
+								}
+								else {
+									bot.sendMessage(msg, "Successfully set!")
+								}
+								});
+						});
+					}
+					return;
+				}
+				else {
+					bot.sendMessage(msg.channel, "Changing your own color is currently disabled on this server.")
+					return;
+				}
+			})
+			return;
+		}
+		if (suffix.trim() == "clean") {
+			var count = 0;
+			msg.channel.server.roles.map((role) => {
+				if (/^CColour - [a-f0-9]{6}$/i.test(role.name)) {
+					console.log("Role name: "+ role.name)
+					console.log("Users with role: "+msg.channel.server.usersWithRole(role))
+					if (msg.channel.server.usersWithRole(role).length < 1) { 
+						count++
+						bot.deleteRole(role, e=>{ 
+							if (e) { 
+								bot.sendMessage(msg, "Error deleting role: " + e)
+							}
+						})
 					}
 				}
-			});
-			if (roleExists) {
-				 setTimeout(function() { bot.addMemberToRole(user, role, (e) => { 
-					if (e) { 
-						bot.sendMessage(msg, "Error giving member role.` "+e+"`") 
-					}
-					else {
-						bot.sendMessage(msg, "Successfully set!")
-					}
-				});  }, 500);
-			} 
-			else {
-				msg.channel.server.createRole({color: parseInt(suffix.replace(/(.*) #?/, ""), 16), hoist: false, permissions: [], name: "CColour - " + suffix.replace(/(.*) #?/, "").toLowerCase() }, (e, rl) => {
-					if (e) { bot.sendMessage(msg, "Error creating role. `"+e+"`"); return; }
-					role = rl;
-					roleExists = true;
-					bot.addMemberToRole(user, role, (e) => { 
-						if (e) { 
-							bot.sendMessage(msg, "Error giving member role. `"+e+"`"); 
-						}
-						else {
-							bot.sendMessage(msg, "Successfully set!")
-						}
-						});
-				});
-			}
-			return;
+			})
+			bot.sendMessage(msg, "Removed " + count + " colors with no users")
+			return
 		}
 		if (msg.mentions.length < 1) { 
 			bot.sendMessage(msg, "You must mention the users you want to change the color of!")
@@ -2652,10 +2176,7 @@ Commands.createrole = {
   usage: "<wtf is this>",
   level: 0,
   fn: function(bot, msg, suffix) {
-	if (msg.channel.isPrivate) { 
-		bot.sendMessage(msg, "This command must be used on a server and not in a PM!")
-		return;
-	}
+	if (msg.channel.isPrivate) return;
 	if (!msg.channel.permissionsOf(msg.author).hasPermission("manageRoles")) { 
 		bot.sendMessage(msg, "You don't have the permission `Manage Roles`! You must have this permission to use `!createrole`")
 		return;
@@ -2667,6 +2188,10 @@ Commands.createrole = {
 	if (!suffix) {
 		bot.sendMessage(msg, "You didn't specify a name for the role!")
 		return;
+	}
+	if (suffix.length > 32) {
+		bot.sendMessage(msg.channel, "The max length of a role name is 32 characters!")
+		return
 	}
 	msg.channel.server.createRole({hoist: false, permissions: [], name: suffix }, (e, rl) => {
 		if (e) { bot.sendMessage(msg, "Error creating role. `"+e+"`"); return; }
@@ -2680,10 +2205,7 @@ Commands.delrole = {
   usage: "<wtf is this>",
   level: 0,
   fn: function(bot, msg, suffix) {
-	if (msg.channel.isPrivate) { 
-		bot.sendMessage(msg, "This command must be used on a server and not in a PM!")
-		return;
-	}
+	if (msg.channel.isPrivate) return;
 	if (!msg.channel.permissionsOf(msg.author).hasPermission("manageRoles")) { 
 		bot.sendMessage(msg, "You don't have the permission `Manage Roles`! You must have this permission to use `!deleterole`")
 		return;
@@ -2711,7 +2233,6 @@ Commands.delrole = {
 			break;
 		}
 	}
-	//suffix = suffix.split(' ').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ')
 	if (role) {
 		bot.deleteRole(role, (e) => { 
 			if (e) { 
@@ -2799,14 +2320,11 @@ Commands.addrole = {
 },  
 
 Commands.removerole = {
-  name: "removerole",
+  name: "addrole",
   usage: "<wtf is this>",
   level: 0,
   fn: function(bot, msg, suffix) {
-	if (msg.channel.isPrivate) { 
-		bot.sendMessage(msg, "This command must be used on a server and not in a PM!")
-		return;
-	}
+	if (msg.channel.isPrivate) return;
 	if (!msg.channel.permissionsOf(msg.author).hasPermission("manageRoles")) { 
 		bot.sendMessage(msg, "You don't have the permission `Manage Roles`! You must have this permission to use `!addrole`")
 		return;
@@ -2867,247 +2385,42 @@ Commands.removerole = {
   }
 },  
   
-/*Commands.mute = {
-	name: "mute",
-	level: 0,
-	fn: function(bot, msg, suffix) {
-		var mutedTime;
-		if (msg.channel.isPrivate) {
-			bot.sendMessage(msg, "This command must be used on a server and not in a PM!")
-			return;
-		}
-		if (!msg.channel.permissionsOf(msg.author).hasPermission("manageRoles")) { 
-			bot.sendMessage(msg, "You don't have the permission `Manage Roles`! You must have this permission to use `!mute`");
-			return;
-		}
-		if (!msg.channel.permissionsOf(bot.user).hasPermission("manageRoles")) { 
-			bot.sendMessage(msg, "I don't have the required permissions to manage roles!");
-			return;
-		}
-		if (msg.mentions.length < 1) { 
-			bot.sendMessage(msg, "You must mention the users you want to mute!");
-			return;
-		}
-		var role = msg.channel.server.roles.get("name", "Muted");
-		if (role) {
-			msg.mentions.map((user) => {
-				bot.addMemberToRole(user, role, (e) => { 
-					if (e) { 
-					bot.sendMessage(msg, "Error muting "+user+"!` "+e+"`") 
-					}
-					else {
-						bot.sendMessage(msg, "Successfully muted "+user+"!")
-					}
-				})
-			})
-		}
-		else {
-			var msgArray = [];
-			msgArray.push("The `Muted` role doesn't exist!")
-			msgArray.push("This command will do nothin if it doesn't exist.")
-			msgArray.push("Create the `Muted` role and then remove the `Send Messages` permission from each individual text channel")
-			msgArray.push("http://i.imgur.com/gxjfj72.png")
-			msgArray.push("http://i.imgur.com/U3o18Gq.png")
-			bot.sendMessage(msg.author, msgArray)
-		}
-		//if(mutedTime) {
-		//	
-		//}
-}}
-Commands.unmute = {
-	name: "unmute",
-	level: 0,
-	fn: function(bot, msg, suffix) {
-		if (msg.channel.isPrivate) {
-			bot.sendMessage(msg, "This command must be used on a server and not in a PM!")
-			return;
-		}
-		if (!msg.channel.permissionsOf(msg.author).hasPermission("manageRoles")) { 
-			bot.sendMessage(msg, "You don't have the permission `Manage Roles`! You must have this permission to use `!unmute`");
-			return;
-		}
-		if (!msg.channel.permissionsOf(bot.user).hasPermission("manageRoles")) { 
-			bot.sendMessage(msg, "I don't have the required permissions to manage roles!");
-			return;
-		}
-		if (msg.mentions.length < 1) { 
-			bot.sendMessage(msg, "You must mention the users you want to unmute!");
-			return;
-		}
-		var role = msg.channel.server.roles.get("name", "Muted");
-		if (role) {
-			msg.mentions.map((user) => {
-				bot.removeMemberFromRole(user, role, (e) => { 
-					if (e) { 
-					bot.sendMessage(msg, "Error unmuting "+user+"!` "+e+"`") 
-					}
-					else {
-					bot.sendMessage(msg, "Successfully unmuted "+user+"!")
-					}
-				})
-			})
-		}
-		else {
-			var msgArray = [];
-			msgArray.push("The `Muted` role doesn't exist!")
-			msgArray.push("This command will do nothin if it doesn't exist.")
-			msgArray.push("Create the `Muted` role and then remove the `Send Messages` permission from each individual text channel")
-			msgArray.push("http://i.imgur.com/gxjfj72.png")
-			msgArray.push("http://i.imgur.com/U3o18Gq.png")
-			bot.sendMessage(msg.author, msgArray)
-		}
-}
-}*/
-
-Commands.songlist = {
-  name: "songlist",
-  description: "Gives a link to a list of songs",
-  extendedhelp: "Gives a link to a list of songs",
-  level: 0,
-  fn: function(bot, msg, suffix) {
-      bot.sendMessage(msg.channel, "Here is the list of songs, " + msg.sender + ": http://puu.sh/o5lMa/3d80bc1a87.txt");
-    }
-  },
-
-Commands.timpreorderedblackops3 = {
-  name: "timpreorderedblackops3",
-  usage: "<wtf is this>",
-  level: 0,
-  fn: function(bot, msg, suffix) {
-		bot.sendMessage(msg.channel, "https://www.reddit.com/r/josegasc/comments/3rpud4/breaking_news_tim_preordered_black_ops_iii_but/");
-	}
-  },
-
-Commands.gidz = {
-  name: "gidz",
-  usage: "<wtf is this>",
-  level: 0,
-  fn: function(bot, msg, suffix) {
-		bot.sendFile(msg.channel, "http://i.imgur.com/pJTsjZq.png");
-	}
-  },  
-  
-Commands.doomschamp = {
-  name: "doomschamp",
-  usage: "<wtf is this>",
-  level: 0,
-  fn: function(bot, msg, suffix) {
-		bot.sendFile(msg.channel, "https://cdn.discordapp.com/attachments/118689714319392769/152692510647517185/3.png");
-	}
-  }, 
-
-Commands.brainpower = {
-  name: "brainpower",
-  usage: "<wtf is this>",
-  level: 0,
-  fn: function(bot, msg, suffix) {
-		bot.sendMessage(msg.channel, "​​`O-oooooooooo AAAAE-A-A-I-A-U- JO-oooooooooooo AAE-O-A-A-U-U-A- E-eee-ee-eee AAAAE-A-E-I-E-A- JO-ooo-oo-oo-oo EEEEO-A-AAA-AAAA`")
-	}
-  }, 
-  
-Commands.oraoraora = {
-  name: "oraoraora",
-  usage: "<wtf is this>",
-  level: 0,
-  fn: function(bot, msg, suffix) {
-		bot.sendMessage(msg.channel, "`ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA ORA`")
-	}
-  },  
-  
-Commands.farmer = {
-  name: "farmer",
-  usage: "<wtf is this>",
-  level: 0,
-  fn: function(bot, msg, suffix) {
-		bot.sendMessage(msg.channel, "⚠ `PP FARMER ALERT` ⚠")
-	}
-  },  
-  
-Commands.principe = {
-  name: "principe",
-  usage: "<wtf is this>",
-  level: 0,
-  fn: function(bot, msg, suffix) {
-		bot.sendMessage(msg.channel, "https://www.youtube.com/watch?v=TZPlFRvisgs")
-  }
-  },
-
-Commands.rood = {
-  name: "rood",
-  usage: "<wtf is this>",
-  level: 0,
-  fn: function(bot, msg, suffix) {
-		bot.sendFile(msg.channel, "http://i.imgur.com/cU6F39n.png");
-  }
-  },  
-
-Commands.nevergiveup = {
-  name: "nevergiveup",
-  usage: "<wtf is this>",
-  level: 0,
-  fn: function(bot, msg, suffix) {
-	bot.sendMessage(msg.channel, "https://www.youtube.com/watch?v=KxGRhd_iWuE");
-	}
-  },
-  
-Commands.itstimetostop = {
-  name: "itstimetostop",
-  usage: "<wtf is this>",
-  level: 0,
-  fn: function(bot, msg, suffix) {
-	bot.sendMessage(msg.channel, "https://www.youtube.com/watch?v=2k0SmqbBIpQ");
-	}
-  },
-  
-Commands.lenny = {
-  name: "lenny",
-  usage: "<wtf is this>",
-  level: 0,
-  fn: function(bot, msg, suffix) {
-	bot.sendFile(msg.channel, "http://vignette1.wikia.nocookie.net/thelennyface/images/2/24/Lenny_face.png");
-	}
-  },
-  
 Commands.anime = {
   name: "anime",
   usage: "<anime name>",
   level: 0,
   fn: function (bot, msg, suffix) {
-			if (suffix) {
-				var USER = ConfigFile.mal.user;
-				var PASS = ConfigFile.mal.pass;
-				if (!USER || !PASS) { bot.sendMessage(msg, "MAL login not configured by bot owner", function (erro, wMessage) { bot.deleteMessage(wMessage, {"wait": 8000}); }); return; }
-				bot.startTyping(msg.channel);
-				var tags = suffix.split(" ").join("+");
-				var rUrl = "http://myanimelist.net/api/anime/search.xml?q=" + tags;
-				request(rUrl, {"auth": {"user": USER, "pass": PASS, "sendImmediately": false}}, function (error, response, body) {
-					if (error) { console.log(error); }
-					if (!error && response.statusCode == 200) {
-						xml2js.parseString(body, function (err, result){
-							//console.log(result.anime.entry[0])
-							var title = result.anime.entry[0].title;
-							var english = result.anime.entry[0].english;
-							var ep = result.anime.entry[0].episodes;
-							var score = result.anime.entry[0].score;
-							var type = result.anime.entry[0].type;
-							var status = result.anime.entry[0].status;
-							var synopsis = result.anime.entry[0].synopsis.toString();
-							var picture = result.anime.entry[0].image[0];
-							synopsis = synopsis.replace(/<br \/>/g, " "); synopsis = synopsis.replace(/\[(.{1,10})\]/g, "");
-							synopsis = synopsis.replace(/\r?\n|\r/g, " "); synopsis = synopsis.replace(/\[(i|\/i)\]/g, "*"); synopsis = synopsis.replace(/\[(b|\/b)\]/g, "**");
-							synopsis = ent.decodeHTML(synopsis);
-							//if (!msg.channel.isPrivate) {
-							//	if (synopsis.length > 400) { synopsis = synopsis.substring(0, 400); synopsis += "..."; }
-							//}
-						setTimeout(function(){ bot.sendMessage(msg, "**" + title + " / " + english+"**\n**Type:** "+ type +" **| Episodes:** "+ep+" **| Status:** "+status+" **| Score:** "+score+"\n"+synopsis); }, 2000)
-						bot.sendFile(msg.channel, picture)
-						});
-					} else { bot.sendMessage(msg, "\""+suffix+"\" not found", function (erro, wMessage) { bot.deleteMessage(wMessage, {"wait": 8000}); }); }
-				});
-				bot.stopTyping(msg.channel);
-			}
+		if (suffix) {
+			var USER = ConfigFile.mal.user;
+			var PASS = ConfigFile.mal.pass;
+			if (!USER || !PASS) { bot.sendMessage(msg, "MAL login not configured by bot owner", function (erro, wMessage) { bot.deleteMessage(wMessage, {"wait": 8000}); }); return; }
+			bot.startTyping(msg.channel);
+			var tags = suffix.split(" ").join("+");
+			var rUrl = "http://myanimelist.net/api/anime/search.xml?q=" + tags;
+			request(rUrl, {"auth": {"user": USER, "pass": PASS, "sendImmediately": false}}, function (error, response, body) {
+				if (error) { console.log(error); }
+				if (!error && response.statusCode == 200) {
+					xml2js.parseString(body, function (err, result){
+						var title = result.anime.entry[0].title;
+						var english = result.anime.entry[0].english;
+						var ep = result.anime.entry[0].episodes;
+						var score = result.anime.entry[0].score;
+						var type = result.anime.entry[0].type;
+						var status = result.anime.entry[0].status;
+						var synopsis = result.anime.entry[0].synopsis.toString();
+						var picture = result.anime.entry[0].image[0];
+						synopsis = synopsis.replace(/<br \/>/g, " "); synopsis = synopsis.replace(/\[(.{1,10})\]/g, "");
+						synopsis = synopsis.replace(/\r?\n|\r/g, " "); synopsis = synopsis.replace(/\[(i|\/i)\]/g, "*"); synopsis = synopsis.replace(/\[(b|\/b)\]/g, "**");
+						synopsis = ent.decodeHTML(synopsis);
+					setTimeout(function(){ bot.sendMessage(msg, "**" + title + " / " + english+"**\n**Type:** "+ type +" **| Episodes:** "+ep+" **| Status:** "+status+" **| Score:** "+score+"\n"+synopsis); }, 2000)
+					bot.sendFile(msg.channel, picture)
+					});
+				} else { bot.sendMessage(msg, "\""+suffix+"\" not found", function (erro, wMessage) { bot.deleteMessage(wMessage, {"wait": 8000}); }); }
+			});
+			bot.stopTyping(msg.channel);
 		}
-	},
+	}
+},
 	
 Commands.osu = {
   name: "osu",
@@ -3248,7 +2561,7 @@ Commands.osu = {
 						msgArray.push("**Profile Link**: http://osu.ppy.sh/u/" +data.user_id);
 						msgArray.push("**Play Count**: "+data.playcount.replace(/\B(?=(\d{3})+(?!\d))/g, ",")+" | **Ranked Score**: "+data.ranked_score.replace(/\B(?=(\d{3})+(?!\d))/g, ",")+" | **Total Score**: "+data.total_score.replace(/\B(?=(\d{3})+(?!\d))/g, ",")+" | **Level**: "+data.level.substring(0, data.level.split(".")[0].length+3));
 						msgArray.push("**PP**: "+data.pp_raw.split(".")[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",")+" | **Rank**: #"+data.pp_rank.replace(/\B(?=(\d{3})+(?!\d))/g, ",")+" | **Country Rank**: #"+data.pp_country_rank.replace(/\B(?=(\d{3})+(?!\d))/g, ",")+" | **Accuracy**: "+data.accuracy.substring(0, data.accuracy.split(".")[0].length+3)+"%");
-						msgArray.push("**300**: "+data.count300.replace(/\B(?=(\d{3})+(?!\d))/g, ",")+" | **100**: "+data.count100.replace(/\B(?=(\d{3})+(?!\d))/g, ",")+" | **50**: "+data.count50.replace(/\B(?=(\d{3})+(?!\d))/g, ",")+" | **SS**: "+data.count_rank_ss+" | **S**: "+data.count_rank_s+" | **A**: "+data.count_rank_a.replace(/\B(?=(\d{3})+(?!\d))/g, ",")+" | **Total Hits**: " +eee.replace(/\B(?=(\d{3})+(?!\d))/g, ","));
+						msgArray.push("**300**: "+data.count300.replace(/\B(?=(\d{3})+(?!\d))/g, ",")+" | **100**: "+data.count100.replace(/\B(?=(\d{3})+(?!\d))/g, ",")+" | **SS**: "+data.count_rank_ss+" | **S**: "+data.count_rank_s+" | **A**: "+data.count_rank_a.replace(/\B(?=(\d{3})+(?!\d))/g, ",")+" | **Total Hits**: " +eee.replace(/\B(?=(\d{3})+(?!\d))/g, ","));
 						msgArray.push("");
 						bot.sendMessage(msg, msgArray);
 						bot.sendFile(msg.channel, 'http://a.ppy.sh/'+avatar+'_1.png')
@@ -4089,63 +3402,45 @@ Commands.osu = {
 				})
 		}
 	}
-	
-Commands.cookiezi = {
-  name: "cookiezi",
-  help: "cookiezi",
-  level: 0,
-  fn: function emoji(bot, msg, suffix) {
-		bot.sendMessage(msg.channel, "http://www.twitch.tv/shigetora");
-	}
-}
-
-Commands.lines = {
-  name: "lines",
-  help: "lines",
-  level: 3,
-  fn: function emoji(bot, msg, suffix) {
-		bot.sendMessage(msg.channel, "Stop the spam. Keep your messages to a minimal amount of lines, please.");
-	}
-}
-	
+		
 Commands.manga = {
   name: "manga",
   usage: "<manga/novel name>",
   level: 0,
   fn: function (bot, msg, suffix) {
-			if (suffix) {
-				var USER = ConfigFile.mal.user;
-				var PASS = ConfigFile.mal.pass;
-				if (!USER || !PASS) { bot.sendMessage(msg, "MAL login not configured by bot owner", function (erro, wMessage) { bot.deleteMessage(wMessage, {"wait": 8000}); }); return; }
-				bot.startTyping(msg.channel);
-				var tags = suffix.split(" ").join("+");
-				var rUrl = "http://myanimelist.net/api/manga/search.xml?q=" + tags;
-				request(rUrl, {"auth": {"user": USER, "pass": PASS, "sendImmediately": false}}, function (error, response, body) {
-					if (error) { console.log(error); }
-					if (!error && response.statusCode == 200) {
-						xml2js.parseString(body, function (err, result){
-							//console.log(result)
-							var title = result.manga.entry[0].title;
-							var english = result.manga.entry[0].english;
-							var chapters = result.manga.entry[0].chapters;
-							var volumes = result.manga.entry[0].volumes;
-							var score = result.manga.entry[0].score;
-							var type = result.manga.entry[0].type;
-							var status = result.manga.entry[0].status;
-							var synopsis = result.manga.entry[0].synopsis.toString();
-							var picture = result.manga.entry[0].image[0];
-							synopsis = synopsis.replace(/<br \/>/g, " "); synopsis = synopsis.replace(/\[(.{1,10})\]/g, "");
-							synopsis = synopsis.replace(/\r?\n|\r/g, " "); synopsis = synopsis.replace(/\[(i|\/i)\]/g, "*"); synopsis = synopsis.replace(/\[(b|\/b)\]/g, "**");
-							synopsis = ent.decodeHTML(synopsis);
-							setTimeout(function(){ bot.sendMessage(msg, "**" + title + " / " + english+"**\n**Type:** "+ type +" **| Chapters:** "+chapters+" **| Volumes: **"+volumes+" **| Status:** "+status+" **| Score:** "+score+"\n"+synopsis); }, 2000)
-							bot.sendFile(msg.channel, picture)
-						});
-					} else { bot.sendMessage(msg, "\""+suffix+"\" not found", function (erro, wMessage) { bot.deleteMessage(wMessage, {"wait": 8000}); }); }
-				});
-				bot.stopTyping(msg.channel);
-			} 
-		}
-	},
+		if (suffix) {
+			var USER = ConfigFile.mal.user;
+			var PASS = ConfigFile.mal.pass;
+			if (!USER || !PASS) { bot.sendMessage(msg, "MAL login not configured by bot owner", function (erro, wMessage) { bot.deleteMessage(wMessage, {"wait": 8000}); }); return; }
+			bot.startTyping(msg.channel);
+			var tags = suffix.split(" ").join("+");
+			var rUrl = "http://myanimelist.net/api/manga/search.xml?q=" + tags;
+			request(rUrl, {"auth": {"user": USER, "pass": PASS, "sendImmediately": false}}, function (error, response, body) {
+				if (error) { console.log(error); }
+				if (!error && response.statusCode == 200) {
+					xml2js.parseString(body, function (err, result){
+						//console.log(result)
+						var title = result.manga.entry[0].title;
+						var english = result.manga.entry[0].english;
+						var chapters = result.manga.entry[0].chapters;
+						var volumes = result.manga.entry[0].volumes;
+						var score = result.manga.entry[0].score;
+						var type = result.manga.entry[0].type;
+						var status = result.manga.entry[0].status;
+						var synopsis = result.manga.entry[0].synopsis.toString();
+						var picture = result.manga.entry[0].image[0];
+						synopsis = synopsis.replace(/<br \/>/g, " "); synopsis = synopsis.replace(/\[(.{1,10})\]/g, "");
+						synopsis = synopsis.replace(/\r?\n|\r/g, " "); synopsis = synopsis.replace(/\[(i|\/i)\]/g, "*"); synopsis = synopsis.replace(/\[(b|\/b)\]/g, "**");
+						synopsis = ent.decodeHTML(synopsis);
+						setTimeout(function(){ bot.sendMessage(msg, "**" + title + " / " + english+"**\n**Type:** "+ type +" **| Chapters:** "+chapters+" **| Volumes: **"+volumes+" **| Status:** "+status+" **| Score:** "+score+"\n"+synopsis); }, 2000)
+						bot.sendFile(msg.channel, picture)
+					});
+				} else { bot.sendMessage(msg, "\""+suffix+"\" not found", function (erro, wMessage) { bot.deleteMessage(wMessage, {"wait": 8000}); }); }
+			});
+			bot.stopTyping(msg.channel);
+		} 
+	}
+},
 
 Commands.e621 = {
   name: "e621",
@@ -4222,22 +3517,6 @@ Commands.setstatus = {
   }}
 };
 
-Commands.randomcat = {
-  name: "randomcat",
-  help: "I'll get a random cat image for you!",
-  level: 0,
-  fn: function(bot, msg, suffix) {
-    bot.startTyping(msg.channel);
-    unirest.get("https://nijikokun-random-cats.p.mashape.com/random")
-      .header("X-Mashape-Key", ConfigFile.api_keys.mashape_key)
-      .header("Accept", "application/json")
-      .end(function(result) {
-        bot.sendMessage(msg.channel, result.body.source);
-        bot.stopTyping(msg.channel);
-      });
-  }
-};
-
 Commands.cleverbot = {
   name: "cleverbot",
   help: "I'll act as Cleverbot when you execute this command, remember to enter a message as suffix.",
@@ -4247,9 +3526,6 @@ Commands.cleverbot = {
     Cleverbot.prepare(function() {
       bot.startTyping(msg.channel);
       cleverbot.write(suffix, function(response) {
-      	//Replaced \\u with an invisible Unicode character, it was glitching out badly.
-       // bot.sendMessage(msg.channel, response.message.replace(/|/g, "‎"));
-	      //console.log(response)
 		  bot.sendMessage(msg.channel, JSON.parse('"' + response.message.replace(/\|/g, "\\u")+ '"'));
         bot.stopTyping(msg.channel);
       });
@@ -4278,16 +3554,6 @@ Commands.leave = {
   }
 };
 
-Commands.online = {
-  name: "online",
-  help: "I'll change my status to online.",
-  level: 5, // If an access level is set to 4 or higher, only the master user can use this
-  fn: function(bot, msg) {
-    bot.setStatusOnline();
-    Logger.log("debug", "My status has been changed to online.");
-  }
-};
-
 Commands.restart = {
   name: "restart",
   help: "This will instantly terminate all of the running instances of the bot without restarting.",
@@ -4297,14 +3563,29 @@ Commands.restart = {
       setTimeout(function() { bot.logout(); }, 3000);
       Logger.log("warn", "Disconnected via killswitch!");
        setTimeout(function() { process.exit(0);}, 3000);
-    } //exit node.js without an error
+    }
 };
 
-Commands.monstrata = {
-  name: "monstrata",
-  level: 0,
+Commands.copy = {
+  name: "copy",
+  level: 3,
   fn: function(bot, msg) {
-	  bot.sendMessage(msg.channel, "thank mr monstrata")
+	bot.awaitResponse(msg, "What would you like me to say?", {}, function(error, message) {
+		if (error) {
+			bot.sendMessage(msg.channel, error)
+			return
+		}
+		console.log(message)
+		bot.getChannelLogs(msg.channel, 100, function(error, messages) {
+			for (var i = 0; i < 100; i++) {
+				if(messages[i].author.id == msg.author.id) {
+					var response = messages[i].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ")
+					break;
+				}
+			}
+			bot.sendMessage(msg.channel, response)
+		})
+	})
   }
 }
 
@@ -4314,10 +3595,7 @@ Commands.purge = {
   usage: "<number-of-messages-to-delete>",
   level: 0,
   fn: function(bot, msg, suffix) {
-    if (!msg.channel.server) {
-      bot.sendMessage(msg.channel, "You can't do that in a DM, dummy!");
-      return;
-    }
+    if (!msg.channel.server) return;
 	if (!msg.channel.permissionsOf(msg.sender).hasPermission("manageMessages")) {
       bot.sendMessage(msg, "You don't have the permission `Manage Messages`! You must have this permission to use `!purge`")
       return;
@@ -4336,14 +3614,21 @@ Commands.purge = {
 				username = msg.mentions[0].username.toLowerCase();
 				var todo = parseInt(suffix.split(" ")[1]);
 				var delcount = 0;
+				var messagestodelete = [];
 				for (var i = 0; i < 100; i++) {
 					if (todo <= 0) {
+						if (messagestodelete.length === 1) {
+							bot.deleteMessage(messagestodelete[0])
+						}
+						else {
+							bot.deleteMessages(messagestodelete)
+						}
 						bot.sendMessage(msg, "Deleted " + delcount + " of " + username + "'s messages")
 						return;
 					}
 					else {
 						if(messages[i].author.username.toLowerCase() == username) {
-							bot.deleteMessage(messages[i]);
+							messagestodelete.push(messages[i]);
 							delcount++; todo--;
 						}
 					}
@@ -4362,14 +3647,21 @@ Commands.purge = {
 				username = msg.mentions[0].username.toLowerCase();
 				var todo = parseInt(suffix.split(" ")[0]);
 				var delcount = 0;
+				var messagestodelete = [];
 				for (var i = 0; i < 100; i++) {
 					if (todo <= 0) {
+						if (messagestodelete.length === 1) {
+							bot.deleteMessage(messagestodelete[0])
+						}
+						else {
+							bot.deleteMessages(messagestodelete)
+						}
 						bot.sendMessage(msg, "Deleted " + delcount + " of " + username + "'s messages.")
 						return;
 					}
 					else {
 						if(messages[i].author.username.toLowerCase() == username) {
-							bot.deleteMessage(messages[i]);
+							messagestodelete.push(messages[i]);
 							delcount++; todo--;
 						}
 					}
@@ -4390,26 +3682,33 @@ Commands.purge = {
       bot.sendMessage(msg.channel, "The maximum is 100.");
       return;
     }
-    bot.getChannelLogs(msg.channel, suffix, function(error, messages) {
-      if (error) {
-        bot.sendMessage(msg.channel, "Something went wrong while fetching logs.");
-        return;
-      } else {
-        Logger.info("Beginning purge...");
-        var todo = messages.length,
-          delcount = 0;
-        for (msg of messages) {
-          bot.deleteMessage(msg);
-          todo--;
-          delcount++;
-          if (todo === 0) {
-            bot.sendMessage(msg.channel, "Done! Deleted " + delcount + " messages.");
-            Logger.info("Ending purge, deleted " + delcount + " messages.");
-            return;
-          }
-        }
-      }
-    });
+    bot.getChannelLogs(msg.channel, 100, function(error, messages) {
+		if (error) {
+			bot.sendMessage(msg.channel, "Something went wrong while fetching logs.");
+			return;
+		} 
+		else {
+			var todo = parseInt(suffix.split(" ")[0]);
+			var delcount = 0;
+			var messagestodelete = [];
+			for (var i = 0; i < 100; i++) {
+				if (todo <= 0) {
+					if (messagestodelete.length === 1) {
+						bot.deleteMessage(messagestodelete[0])
+					}
+					else {
+						bot.deleteMessages(messagestodelete)
+					}
+					bot.sendMessage(msg, "Deleted " + delcount + " messages.")
+					return;
+				}
+				else {
+					messagestodelete.push(messages[i]);
+					delcount++; todo--;
+				}
+			}
+		}
+	});
   }
 };
 
@@ -4420,10 +3719,7 @@ Commands.ban = {
   level: 0,
   fn: function(bot, msg, suffix){
 	  var a = 0;
-	if (!msg.channel.server) {
-      bot.sendMessage(msg.channel, "You can't do that in a DM, dummy!");
-      return;
-    }
+	if (!msg.channel.server) return;
     if (!msg.channel.permissionsOf(msg.sender).hasPermission("banMembers")) {
       bot.sendMessage(msg, "You don't have the permission `Ban Members`! You must have this permission to use `!ban`")
       return;
@@ -4436,39 +3732,47 @@ Commands.ban = {
 		bot.sendMessage(msg.channel, "Good try, BooBot")
 		return;
 	}
-	  if (msg.mentions.length < 1) {
-		  bot.sendMessage(msg.channel, "You must mention the user you want to ban!");
-		  return;
-	  }
-	  if (msg.mentions.length > 1) {
-		  bot.sendMessage(msg.channel, "You can only ban 1 person at a time!");
-		  return;
-	  }
-	    msg.mentions.forEach(function (user) {
-				if (msg.author === user) {
-					bot.sendMessage(msg.channel, "You can't ban yourself, idiot.")
-					a = 2;
-					return;
-				}
-				bot.banMember(user,msg.channel.server)
-				bot.sendMessage(msg.channel, user+" has been banned from "+msg.channel.server.name);
-				Permissions.GetStafflog(msg.channel.server.id, function(err, reply) {
-					if (reply === "none") {}
-					else {
-						var reason = suffix.replace("<@"+user.id+">", "")
-						if (reason === "" || reason === " ") {
-							reason = "No reason was provided."
-						}
-						setTimeout(function(){ bot.sendMessage(reply, user+ " has been banned"); }, 100)
-						setTimeout(function(){ bot.sendMessage(reply, "Reason: "+reason); }, 200)
-					}
-				})
-				a = 1;
+	if (msg.mentions.length < 1) {
+		bot.sendMessage(msg.channel, "You must mention the user you want to ban!");
+		return;
+	}
+	if (msg.mentions.length > 1) {
+		bot.sendMessage(msg.channel, "You can only ban 1 person at a time!");
+		return;
+	}
+	msg.mentions.forEach(function (user) {
+		if (msg.author === user) {
+			bot.sendMessage(msg.channel, "You can't ban yourself, idiot.")
+			a = 2;
+			return;
+		}
+		bot.banMember(user,msg.channel.server, function(err){
+			if (err) {
+				bot.sendMessage(msg.author, "Couldn't ban "+user+"\nIt is likely i couldn't ban them successfully because my highest role is not above "+user+"'s highest role. I recommend you move my role to the top of the role list to avoid any further issues.")
 				return;
-})
-if (a === 0) { 
-bot.sendMessage(msg.channel, "Couldn't find the mentioned user!"); 
-} 
+			}
+		})
+		bot.sendMessage(msg.channel, user+" has been banned from "+msg.channel.server.name);
+		Permissions.GetStafflog(msg.channel.server.id, function(err, reply) {
+			if (reply === "none") {}
+			else {
+				var reason = suffix.replace("<@"+user.id+">", "")
+				if (reason === "" || reason === " ") {
+					reason = "No reason was provided."
+				}
+				var array = [];
+				array.push(user+ " has been banned")
+				array.push("Reason: "+reason);
+				array.push("Banned by: "+msg.author);
+				bot.sendMessage(reply, array)
+			}
+		})
+		a = 1;
+		return;
+	})
+	if (a === 0) { 
+		bot.sendMessage(msg.channel, "Couldn't find the mentioned user!"); 
+	} 
 }}
 
 Commands.unban = {
@@ -4477,11 +3781,8 @@ Commands.unban = {
   usage: "<number-of-messages-to-delete>",
   level: 0,
   fn: function(bot, msg, suffix){
-	  var a = 0;
-	if (!msg.channel.server) {
-      bot.sendMessage(msg.channel, "You can't do that in a DM, dummy!");
-      return;
-    }
+	var a = 0;
+	if (!msg.channel.server) return;
     if (!msg.channel.permissionsOf(msg.sender).hasPermission("banMembers")) {
       bot.sendMessage(msg, "You don't have the permission `Ban Members`! You must have this permission to use `!ban`")
       return;
@@ -4494,14 +3795,28 @@ Commands.unban = {
 		bot.sendMessage(msg.channel, "Good try, BooBot")
 		return;
 	}
-	  if (msg.mentions.length < 1) {
-		  bot.sendMessage(msg.channel, "You must mention the user you want to unban!");
-		  return;
-	  }
-	  if (msg.mentions.length > 1) {
-		  bot.sendMessage(msg.channel, "You can only unban 1 person at a time!");
-		  return;
-	  }
+	if (msg.mentions.length < 1) {
+		var users = bot.users.get("name", suffix.trim())
+		if (users) {
+			bot.unbanMember(users, msg.channel.server, function(err) {
+				if (err) {
+					return
+				}
+				else {
+					bot.sendMessage(msg.channel, users+" has been unbanned from "+msg.channel.server.name);
+					return
+				}
+			})
+		}
+		else {
+			bot.sendMessage(msg.channel, "You must mention the user you want to unban!");
+			return;
+		}
+	}
+	if (msg.mentions.length > 1) {
+		bot.sendMessage(msg.channel, "You can only unban 1 person at a time!");
+		return;
+	}
 	    msg.mentions.forEach(function (user) {
 				if (msg.author === user) {
 					bot.sendMessage(msg.channel, "How would you even unban yourself?!?!")
@@ -4517,16 +3832,19 @@ Commands.unban = {
 						if (reason === "" || reason === " ") {
 							reason = "No reason was provided."
 						}
-						setTimeout(function(){ bot.sendMessage(reply, user+ " has been unbanned"); }, 100)
-						setTimeout(function(){ bot.sendMessage(reply, "Reason: "+reason); }, 200)
+						var array = [];
+						array.push(user+ " has been unbanned")
+						array.push("Reason: "+reason);
+						array.push("Unbanned by: "+msg.author);
+						bot.sendMessage(reply, array)
 					}
 				})
 				a = 1;
 				return;
 })
-if (a === 0) { 
-bot.sendMessage(msg.channel, "Couldn't find the mentioned user!"); 
-} 
+	if (a === 0) {
+		bot.sendMessage(msg.channel, "Couldn't find the mentioned user!"); 
+	} 
 }}
 
 Commands.kick = {
@@ -4534,10 +3852,7 @@ Commands.kick = {
   level: 0,
   fn: function(bot, msg, suffix){
 	  var a = 0;
-	if (!msg.channel.server) {
-      bot.sendMessage(msg.channel, "You can't do that in a DM, dummy!");
-      return;
-    }
+	if (!msg.channel.server) return;
     if (!msg.channel.permissionsOf(msg.sender).hasPermission("kickMembers")) {
       bot.sendMessage(msg, "You don't have the permission `Kick Members`! You must have this permission to use `!kick`")
       return;
@@ -4564,8 +3879,13 @@ Commands.kick = {
 					a = 2;
 					return;
 				}
-				bot.kickMember(user,msg.channel.server)
-				bot.sendMessage(msg.channel, user+" has been kicked from "+msg.channel.server.name);
+				bot.kickMember(user, msg.channel.server, function(err){
+					if (err) {
+						bot.sendMessage(msg.author, "Couldn't kick "+user+"\nIt is likely i couldn't kick them successfully because my highest role is not above "+user+"'s highest role. I recommend you move my role to the top of the role list to avoid any further issues.")
+						return;
+					}
+				})
+				bot.sendMessage(msg.channel, user+" has been kicked.");
 				var reason = suffix.replace("<@"+user.id+">", "")
 				if (reason === "" || reason === " ") {
 					reason = "No reason was provided."
@@ -4573,8 +3893,11 @@ Commands.kick = {
 				Permissions.GetStafflog(msg.channel.server.id, function(err, reply) {
 					if (reply === "none") {}
 					else {
-						setTimeout(function(){ bot.sendMessage(reply, user+ " has been kicked"); }, 100)
-						setTimeout(function(){ bot.sendMessage(reply, "Reason: "+reason); }, 200)
+						var array = [];
+						array.push(user+ " has been kicked")
+						array.push("Reason: "+reason);
+						array.push("Kicked by: "+msg.author);
+						bot.sendMessage(reply, array)
 					}
 				})
 				a = 1;
@@ -4589,15 +3912,43 @@ Commands.whois = {
   name: "whois",
   help: "I'll get some information about the user you've mentioned.",
   level: 0,
-  fn: function(bot, msg) {
+  fn: function(bot, msg, suffix) {
     var UserLevel = 0;
-    if (!msg.channel.server) {
-      bot.sendMessage(msg.author, "I can't do that in a DM, sorry.");
-      return;
-    }
+    if (!msg.channel.server) return;
     if (msg.mentions.length === 0) {
-      bot.sendMessage(msg.channel, "Please mention the user that you want to get information of.");
-      return;
+	  usr = suffix.substring(3).slice(0, -1).trim()
+	  console.log(usr)
+	  user = bot.users.get("id", usr)
+	  if (user) {
+		  Permissions.GetLevel((msg.channel.server.id + user.id), user.id, function(err, level) {
+			if (err) {
+			  return;
+			} else {
+			  UserLevel = level;
+			}
+			var msgArray = [];
+			if (user.avatarURL === null) {
+			  msgArray.push("Requested user: `" + user.username + "`");
+			  msgArray.push("ID: `" + user.id + "`");
+			  msgArray.push("Status: `" + user.status + "`");
+			  msgArray.push("Current access level: " + UserLevel);
+			  bot.sendMessage(msg.channel, msgArray);
+			  return;
+			} else {
+			  msgArray.push("Requested user: `" + user.username + "`");
+			  msgArray.push("ID: `" + user.id + "`");
+			  msgArray.push("Status: `" + user.status + "`");
+			  msgArray.push("Avatar: " + user.avatarURL);
+			  msgArray.push("Current access level: " + UserLevel);
+			  bot.sendMessage(msg.channel, msgArray);
+			}
+		  });
+		  return;
+	  }
+	  else {
+		  bot.sendMessage(msg.channel, "Please mention the user that you want to get information of.");
+		  return;
+	  }
     }
     msg.mentions.map(function(user) {
       Permissions.GetLevel((msg.channel.server.id + user.id), user.id, function(err, level) {
@@ -4632,10 +3983,7 @@ Commands.setlevel = {
   help: "This changes the permission level of an user.",
   level: 3,
   fn: function(bot, msg, suffix) {
-    if (!msg.channel.server) {
-      bot.sendMessage(msg.channel, "I can't do that in a PM!");
-      return;
-    }
+    if (!msg.channel.server) return;
     if (isNaN(suffix[0])) {
       bot.reply(msg.channel, "your first param is not a number!");
       return;
@@ -4676,10 +4024,7 @@ Commands.setnsfw = {
   usage: "<on | off>",
   level: 3,
   fn: function(bot, msg, suffix) {
-    if (!msg.channel.server) {
-      bot.sendMessage(msg.channel, "NSFW commands are always allowed in DM's.");
-      return;
-    }
+    if (!msg.channel.server) return;
     if (suffix === "on" || suffix === "off") {
       Permissions.SetNSFW(msg.channel, suffix, function(err, allow) {
         if (err) {
@@ -4697,68 +4042,33 @@ Commands.setnsfw = {
   }
 };
 
-Commands.setosu = {
-  name: "setosu",
+Commands.setcoloruser = {
+  name: "setcoloruser",
+  help: "This changes if the channel allows NSFW commands.",
+  usage: "<on | off>",
   level: 0,
   fn: function(bot, msg, suffix) {
-		Permissions.SetOsu(msg, suffix, function(err, allow) {
-			if (err) {
-			bot.reply(msg.channel, "I've failed to set your osu! name!");
-			}
-			if (allow != -1) {
-			bot.sendMessage(msg.channel, "I have set your username to: " + allow); 
-			}
-			else {
-			bot.reply(msg.channel, "I've failed to set your osu! name!");
-			}
-		});
+    if (!msg.channel.server) return;
+	if (!msg.channel.permissionsOf(msg.author).hasPermission("manageRoles")) { 
+		bot.sendMessage(msg, "You must have the permission `Manage Roles` to use this command!")
+		return;
+	}
+    if (suffix === "on" || suffix === "off") {
+      Permissions.SetColorUser(msg.channel.server.id, suffix, function(err, allow) {
+        if (err) {
+          bot.reply(msg.channel, "An error occured.");
+        }
+        if (allow === "on") {
+          bot.sendMessage(msg.channel, "Anyone can now change their color with `!coloruser` on this server.");
+        } else if (allow === "off") {
+          bot.sendMessage(msg.channel, "Only members with `Manage Roles` can change their color with `!coloruser` now.");
+        } else {
+          bot.reply(msg.channel, "An error occured.");
+        }
+      });
+    }
   }
-}
-
-Commands.osutest = {
-  name: "osutest",
-  level: 0,
-  fn: function(bot, msg, suffix) {
-	  var APIKEY = ConfigFile.api_keys.osu_api_key;
-	  var osu = new osuapi.Api(APIKEY);
-	  osu.getUser(suffix, function(err, data) {
-		  if (!data) { 
-			bot.sendMessage(msg.channel, "User not found.") 
-			return;
-			}
-		  if (data) {
-			  var osuname1 = data.username;
-			  var osurank = data.pp_rank;
-			  var osuname = osuname1.toLowerCase();
-			  console.log(osuname)
-			  Permissions.SetOsuRank(osuname, osurank, function(err, allow) {
-			if (err) {
-			bot.reply(msg.channel, "error");
-			return;
-			}
-			if (allow != -1) {
-			bot.sendMessage(msg.channel, "I have set your username to: " + allow); 
-			}
-			else {
-			bot.reply(msg.channel, "error");
-			return;
-			}
-		})
-		  }
-	  })
-  }
-}
-
-Commands.osutestget = {
-  name: "osutestget",
-  level: 0,
-  fn: function(bot, msg, suffix) {
-	  var suffix1 = suffix.toLowerCase();
-	Permissions.GetOsuRank(suffix1, function(err, reply) {
-		bot.sendMessage(msg.channel, "Rank: " + reply)
-	})
-  }
-}
+};
 
 Commands.setignore = {
   name: "setignore",
@@ -4766,11 +4076,8 @@ Commands.setignore = {
   usage: "<on | off>",
   level: 3,
   fn: function(bot, msg, suffix) {
-    if (!msg.channel.server) {
-      bot.sendMessage(msg.channel, "Commands are always allowed in DM's.");
-      return;
-    }
-    if (suffix === "yes" || suffix === "no") {
+    if (!msg.channel.server) return;
+    if (suffix.toLowerCase().trim() === "yes" || suffix.toLowerCase().trim() === "no") {
       Permissions.SetIgnore(msg.channel, suffix, function(err, allow1) {
         if (err) {
           bot.reply(msg.channel, "I've failed to set Ignore flag!");
@@ -4793,9 +4100,9 @@ Commands.setowner = {
   level: 0,
   fn: function(bot, msg) {
     if (msg.channel.isPrivate) {
-      bot.sendMessage(msg.channel, "You need to execute this command in a server, dummy!");
       return;
-    } else {
+    } 
+	else {
       Permissions.SetLevel((msg.channel.server.id + msg.channel.server.owner.id), 4, function(err, level) {
         if (err) {
           bot.sendMessage(msg.channel, "Sorry, an error occured, try again later.");
@@ -4846,55 +4153,17 @@ Commands["join-server"] = {
   usage: "<bot-username> <instant-invite>",
   level: 0,
   fn: function(bot, msg, suffix) {
+	return;
     suffix = suffix.split(" ");
 	if (ConfigFile.discord.token_mode === true) {
-      bot.sendMessage(msg.channel, "Please click this link, login if needed, and select which server you want me to join! " + ConfigFile.discord.oauth_url);
-	  setTimeout(function() { bot.sendMessage(msg.channel, "Note that you **MUST** have the permission to **Manage Server** on the server you wish to invite me too.") }, 200);
-	  setTimeout(function() { bot.sendMessage(msg.channel, "I request to have most permissions, however you can select which permissions I am given.") }, 400);
-	  setTimeout(function() { bot.sendMessage(msg.channel, "Please make sure to use `!setowner` after I have joined. If you need any other help, please use `!support` or contact my owner directly. zelda101#1379") }, 600);
-      return;
+	var array = [];
+	array.push("Please click this link, login if needed, and select which server you want me to join! " + ConfigFile.discord.oauth_url);
+	array.push("Note that you **MUST** have the permission to **Manage Server** on the server you wish to invite me too.")
+	array.push("I request to have most permissions, however you can select which permissions I am given.")
+	array.push("Please make sure to use `!setowner` after I have joined. If you need any other help, please use `!support` or contact my owner directly. zelda101#1379")
+	bot.sendMessage(msg.channel, array)
+	return;
     }
-    if (suffix[0] === bot.user.username) {
-      Logger.log("debug", bot.joinServer(suffix[1], function(error, server) {
-        Logger.log("debug", "callback: " + arguments);
-        if (error || !server) {
-          Logger.warn("Failed to join a server: " + error);
-          bot.sendMessage(msg.channel, "Something went wrong, try again.");
-        } 
-		else {
-		  for (i = 0; i < bot.servers.length; i++) {
-				if (server.id === bot.servers[i].id) {
-					bot.sendMessage(msg.author, "I'm already on **"+server.name+"**!")
-					return;
-				}
-			}
-          var msgArray = [];
-          msgArray.push("Greetings! I'm **" + bot.user.username + "**, " + msg.author + " invited me to this server.");
-          msgArray.push("If I'm intended to be in this server, you may use **!help**, **!admin-help**, or **!nsfw-help** to see what I can do!");
-          msgArray.push("If you don't want me here, you may use **!leave** to force me to leave.");
-          bot.sendMessage(server.defaultChannel, msgArray);
-          //msgArray = [];
-          //msgArray.push("Hey " + server.owner.username + ", I've joined a server in which you're the founder.");
-         // msgArray.push("I'm " + bot.user.username + ", a Discord bot.");
-         // msgArray.push("If you are not keen on having me in your server, you may use `!leave` in the server I'm not welcome in.");
-        //  msgArray.push("If you do want me, use `!help`, `!nsfw-help`, and `!admin-help` to see what I can do.");
-       //   bot.sendMessage(server.owner, msgArray);
-          bot.sendMessage(msg.channel, "I've successfully joined **" + server.name + "**");
-        }
-      }));
-    } else {
-      Logger.log("debug", "Ignoring join command meant for another bot.");
-    }
-  }
-};//
-
-Commands.idle = {
-  name: "idle",
-  help: "This will change my status to idle.",
-  level: 5, // If an access level is set to 4 or higher, only the master user can use this
-  fn: function(bot, msg) {
-    bot.setStatusIdle();
-    Logger.log("debug", "My status has been changed to idle.");
   }
 };
 
@@ -4902,7 +4171,7 @@ Commands.botstatus = {
   name: "botstatus",
   help: "I'll get some info about me, like uptime and currently connected servers.",
   level: 0,
-  fn: function(bot, msg, suffix, mescount, comcount) {
+  fn: function(bot, msg, suffix) {
 	var onlineMembers = 0;
 	var offlineMembers = 0;
     var msgArray = [];
@@ -4910,8 +4179,8 @@ Commands.botstatus = {
     msgArray.push("I'm used in " + bot.servers.length + " servers, in " + bot.channels.length + " channels and by " + bot.users.length + " users.");
     msgArray.push("My uptime is " + (Math.round(bot.uptime / (1000 * 60 * 60))) + " hours, " + (Math.round(bot.uptime / (1000 * 60)) % 60) + " minutes, and " + (Math.round(bot.uptime / 1000) % 60) + " seconds.");
 	msgArray.push("Memory Usage: " + Math.round(process.memoryUsage().rss / 1024 / 1000) + "MB");
-	msgArray.push("Total messages seen since last restart: " +mescount._count);
-	msgArray.push("Total commands executed since last restart: " +comcount._count)
+	//msgArray.push("Total messages seen since last restart: " +mescount._count);
+	//msgArray.push("Total commands executed since last restart: " +comcount._count)
     bot.sendMessage(msg.channel, msgArray);
   }
 };
@@ -4985,7 +4254,10 @@ Commands.lolibooru = {
   level: 0,
   nsfw: true,
   fn: function(bot, msg, suffix) {
-	bot.sendMessage(msg.channel, "This command is currently unavailable. http://lolibooru.moe suffered a hardware failure and as such, the server is down. For more information, see here: http://meiling.moe/")
+	if (msg.channel.server.id === "137678884022910976") {
+		return;
+	}
+	console.log("hi")
     unirest.post("https://lolibooru.moe/post/index.json?limit=500&tags=" + suffix)
       .end(function(result) {
         if (result.body.length < 1){
@@ -5045,7 +4317,10 @@ Commands.loli = {
   level: 0,
   nsfw: true,
   fn: function(bot, msg, suffix) {
-	//bot.sendMessage(msg.channel, "This command is currently unavailable. http://lolibooru.moe suffered a hardware failure and as such, the server is down. For more information, see here: http://meiling.moe/")
+	if (msg.channel.server.id === "137678884022910976") {
+		return;
+	}
+	console.log("hi")
     unirest.post("https://lolibooru.moe/post/index.json?limit=500&tags=" + suffix)
       .end(function(result) {
         if (result.body.length < 1){
@@ -5189,7 +4464,6 @@ Commands["radio-help"] = {
 		msgArray.push("`!np` shows the current song this is playing.");
 		msgArray.push("`!last` shows the last song I was playing.");
 		bot.sendMessage(msg.author, msgArray);
-		Logger.debug("Send help via DM.");
 		bot.sendMessage(msg.channel, "Ok " + msg.author + ", I've sent you a list of my radio commands via DM.");
 		return;
 	}

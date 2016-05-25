@@ -270,6 +270,36 @@ exports.GetAnnouncement = function(server, callback) {
   });
 };
 
+exports.SetColorUser = function(server, allow2, callback) {
+  db.put("auth_coloruser:" + server, allow2, function(err) {
+	if (err) {
+      Logger.error("LevelUP error! " + err);
+      callback(err, "off");
+    }
+    if (!err) {
+      callback(null, allow2);
+	  return;
+    }
+  });
+};
+
+exports.GetColorUser = function(server, callback) {
+  db.get("auth_coloruser:" + server, function(err, value) {
+    if (err) {
+      if (err.notFound) {
+        callback(null, "off");
+        return;
+      } else {
+        Logger.error("LevelUP error! " + err);
+        callback(err, -1);
+      }
+    }
+    if (value) {
+      return callback(null, value);
+    }
+  });
+};
+
 exports.GetAnnounceJoinMessage = function(server, callback) {
   db.get("auth_announcejoinmessage:" + server, function(err, value) {
     if (err) {
