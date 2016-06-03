@@ -24,7 +24,7 @@
     "require-all": "^2.0.0",
     "unirest": "*",
     "winston": "^1.1.1",
-    "xml2js": "*",
+    "xml2js": "*"
   },
   "main": "Koi.js"
 }

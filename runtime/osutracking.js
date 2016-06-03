@@ -1,8 +1,6 @@
-osutracker = require("./osutracker.json");
 taikotracker = require("./taikotracker.json");
 ctbtracker = require("./ctbtracker.json");
 maniatracker = require("./maniatracker.json");
-allchannels = require('require-all')(__dirname + '/osutracking');
 apicalls = 0;
 
 exports.osutrack = function(osu, bot){

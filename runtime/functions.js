@@ -160,17 +160,36 @@ exports.startPunishDown = function(bot) {
     }, 3600000);
 }
 
+exports.eventAnnounce = function(bot) {
+	setInterval (function () {
+		for (var i = 0; i < events.items.length; i++) {
+			var d = new Date();
+			var miliseconds = d.getTime();
+			console.log(events.items[i].lastsent + (events.items[i].time * 60000) < miliseconds)
+			if (events.items[i].lastsent + (events.items[i].time * 60000) < miliseconds) {
+				for (var j = 0; j < events.items[i].channel.split(", ").length; j++) {
+					bot.sendMessage(events.items[i].channel.split(", ")[j], events.items[i].response)
+					events.items[i].lastsent = miliseconds
+					require("fs").writeFile("./runtime/events.json",JSON.stringify(events,null,2), null);
+				}
+			}
+		}
+	}, 5000);
+}
+
 exports.startOsuTrack = function(bot) {
     setInterval (function () {
-		allchannels = require('require-all')(__dirname + '/osutracking');
-		fs.readdir(__dirname + "/osutracking/", function (err, files) { 
-			if (!err) {
-				asdfasdf = files
+		for (var i = 0; i < trackedchannels.items.length; i++) {
+			if (trackedchannels.items[i].mode === 0) {
+				if (trackedchannels.items[i].inactivity === 0) {
+					osutracking.osutrack(trackedchannels.items[i], bot)
+				}
+				else {
+					if (trackedchannels.items[i].inactivity < 10) {
+						inactivity(bot, trackedchannels.items[i])
+					}
+				}
 			}
-		});
-		for (var i = 0; i < asdfasdf.length; i++) {
-			var currentdata = allchannels[asdfasdf[i].slice(0,-5)]
-			testfunc(currentdata, bot)
 		}
     }, 60000);
 }
@@ -291,9 +310,27 @@ function punishDown (user, server, bot) {
 	})
 }
 
-function testfunc (data, bot) {
-	if (!data) return;
-	for (var i = 0; i < data.items.length; i++) {
-		osutracking.osutrack(data.items[i], bot)
+function inactivity (bot, data) {
+	if (data.inactivity === 1) {
+		setTimeout(function() { 
+			osutracking.osutrack(data, bot); 
+		}, 60000);
 	}
+	else if (data.inactivity === 2) {
+		setTimeout(function() {
+			osutracking.osutrack(data, bot); 
+		}, 1200000);
+	}
+	else if (data.inactivity === 3) {
+		setTimeout(function() { 
+			osutracking.osutrack(data, bot); 
+		}, 2400000);
+	}
+	else if (data.inactivity === 4) {
+		setTimeout(function() { 
+			osutracking.osutrack(data, bot); 
+		}, 3600000);
+	}
+	data.inactivity = parseInt(data.inactivity + "" + 0)
+	require("fs").writeFile("./runtime/osutracking/db.json",JSON.stringify(trackedchannels, null, 4), null);
 }

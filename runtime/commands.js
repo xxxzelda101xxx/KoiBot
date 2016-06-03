@@ -25,6 +25,7 @@ var ConfigFile = require("../config.json"),
 	mutemessage = [],
 	unmutemessage = [],
 	mentions = [],
+	events = require("./events.json"),
 	v = 0,
 	z = 0,
 	attempts = 0,
@@ -33,6 +34,119 @@ var ConfigFile = require("../config.json"),
 var osu = new osuapi.Api(ConfigFile.api_keys.osu_api_key);
 var Commands = [];
 
+Commands.eventannounce = {
+	"name": "eventannounce",
+	level: 3,
+	fn: function(bot, msg, suffix) {
+		if (!suffix) {
+			bot.awaitResponse(msg, "What would you like the message to say?", {}, function(error, message) {
+				if (error) {
+					bot.sendMessage(msg.channel, error);
+					return;
+				}
+				bot.getChannelLogs(msg.channel, 100, function(error, messages) {
+					for (var i = 0; i < 100; i++) {
+						if (messages[i].author.id == msg.author.id) {
+							var response = messages[i].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ")
+							break
+						}
+					}
+					bot.awaitResponse(msg, "How often would you like me to repeat this message (in minutes)?", {}, function(error, message) {
+						if (error) {
+							bot.sendMessage(msg.channel, error);
+							return
+						}
+						bot.getChannelLogs(msg.channel, 100, function(error, messages) {
+							for (var i = 0; i < 100; i++) {
+								if (messages[i].author.id == msg.author.id) {
+									var time = parseInt(messages[i].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " "))
+									break
+								}
+							}
+							bot.awaitResponse(msg, "Which channel(s) do you want to send this message to?", {}, function(error, message) {
+								if (error) {
+									bot.sendMessage(msg.channel, error);
+									return;
+								}
+								bot.getChannelLogs(msg.channel, 100, function(error, messages) {
+									var eventChannel = ""
+									for (var i = 0; i < 100; i++) {
+										if (messages[i].author.id == msg.author.id) {
+											var messageeee = messages[i].content.trim();
+											break;
+										}
+									}
+									for (var j = 0; j < (messageeee.trim().split(" ").length); j++) {
+										if (messageeee.split(" ")[j].indexOf("<") < 0 || messageeee.indexOf(">") < 0 || messageeee.indexOf("#") < 0) { console.log("hi"); }
+										else {
+											var channeltocheck = messageeee.split(" ")[j].replace("<", "").replace(">", "").replace("#", "");
+											var channelisvalid = msg.channel.server.channels.get("id", channeltocheck)
+											if (channeltocheck) {
+												if (eventChannel === "") {
+													eventChannel = channelisvalid.id
+												}
+												else {
+													eventChannel = eventChannel + ", " + channelisvalid.id
+												}
+											}
+										}
+									}
+									
+									var event = {
+										"time": time,
+										"lastsent": msg.timestamp,
+										"response": response,
+										"channel": eventChannel
+									};
+									var eventchanneltag = ""
+									for (var i = 0; i < eventChannel.split(", ").length; i++) {
+										console.log(eventChannel.split(", ")[i])
+										if (eventchanneltag === "") {
+											eventchanneltag = "<#" + eventChannel.split(", ")[i] + ">"
+											console.log(eventchanneltag)
+										}
+										else {
+											eventchanneltag = eventchanneltag + ", <#" + eventChannel.split(", ")[i] + ">"
+											console.log(eventchanneltag)
+										}
+									}
+									events.items.push(event);
+									fs.writeFileSync("./runtime/events.json", JSON.stringify(events, null, 2), null);
+									bot.sendMessage(msg.channel, `I will send the message: **${response}** every **${time}** minute(s) in ${eventchanneltag}`)
+									return;
+								})
+							})
+						})
+					})
+				})
+			})
+		}
+		else {
+			var time = ""
+			suffix = suffix.trim()
+			for (var i = 0; i < suffix.length; i++) {
+				if (!isNaN(suffix[i])) {
+					time = time + suffix[i]
+				}
+				else {
+					var response = suffix.substring(time.length)
+					time = time.trim()
+					break
+				}
+			}
+			var event = {
+					"time": time,
+					"response": response,
+					"channel": msg.channel.id
+			};
+			events.items.push(event);
+			fs.writeFileSync("./runtime/events.json", JSON.stringify(events, null, 2), null);
+			bot.sendMessage(msg.channel, `I will send the message: **${response}** every **${time}** minutes!`);
+			return;
+		}
+	}
+}
+
 Commands.temporary = {
 	"name": "temporary",
 	level: 0,
@@ -40,8 +154,9 @@ Commands.temporary = {
 		if (msg.channel.isPrivate) return;
 		var doomsserver = bot.servers.get("id", msg.channel.server.id);
 		var role1 = doomsserver.roles.get("name", "Discord Mod");
+		var role2 = doomsserver.roles.get("name", "NSFW Overlord")
 		if (role1) {
-			if (!msg.channel.permissionsOf(msg.author).hasPermission("manageRoles") && msg.channel.server.membersWithRole(role1).indexOf(msg.author) < 0) {
+			if (!msg.channel.permissionsOf(msg.author).hasPermission("manageRoles") && msg.channel.server.membersWithRole(role1).indexOf(msg.author) < 0 && !msg.channel.permissionsOf(msg.author).hasPermission("administrator") && msg.channel.server.membersWithRole(role2).indexOf(msg.author) < 0) {
 				bot.sendMessage(msg, "You don't have permission to use this command.");
 				return;
 			}
@@ -183,11 +298,6 @@ Commands.track = {
 				osu.setMode(3);
 				break;
 		}
-		if (typeof trackedchannels[msg.channel] === 'undefined') {
-			trackedchannels[msg.channel] = {
-				items: []
-			};
-		}
 		var path = `./osutracking/db.json`;
 		try {
 			fs.accessSync(path, fs.F_OK);
@@ -201,11 +311,10 @@ Commands.track = {
 			fs.writeFileSync(filename, JSON.stringify(obj, null, 4));
 		}
 		var filename = `${__dirname}/osutracking/db.json`;
-		var trackedchannel = trackedchannels[msg.channel];
 		var mode = String(osu.mode).replace('0', 'osu!').replace('1', 'Taiko').replace('2', 'Catch The Beat').replace('3', 'Mania');
 		if (!suffix.split(" ")[1]) {
 			var currentOsu = [];
-			trackedchannel.items.forEach(function(osu) {
+			trackedchannels.items.forEach(function(osu) {
 				if (osu) {
 					if (osu.channel === msg.channel.id) {
 						currentOsu.push(osu.Username);
@@ -232,40 +341,52 @@ Commands.track = {
 			if (data) {
 				var searchTerm = data.username.toLowerCase();
 				var index = -1;
-				for (var i = 0; i < trackedchannel.items.length; i++) {
-					if (trackedchannel.items[i] === null) i++;
-					if (trackedchannel.items[i].Username.toLowerCase() === searchTerm) {
-						if (trackedchannel.items[i].channel === msg.channel.id) {
+				for (var i = 0; i < trackedchannels.items.length; i++) {
+					if (trackedchannels.items[i] === null) i++;
+					if (trackedchannels.items[i].username.toLowerCase() === searchTerm) {
+						if (trackedchannels.items[i].channel === msg.channel.id) {
 							index = i;
 							break;
 						}
 					}
 				}
 				if (index > -1) {
-					bot.sendMessage(msg.channel, `No longer tracking **${mode}** gains for **${trackedchannel.items[index].Username}** in ${msg.channel}`);
-					trackedchannel.items.splice(index, 1);
+					bot.sendMessage(msg.channel, `No longer tracking **${mode}** gains for **${trackedchannels.items[index].Username}** in ${msg.channel}`);
+					trackedchannels.items.splice(index, 1);
 					fs.writeFileSync(filename, JSON.stringify(trackedchannels, null, 4));
 					return;
 				}
 				bot.sendMessage(msg.channel, `Now tracking **${mode}** gains for **${data.username}** in ${msg.channel}`);
-				var user = {
-					"username": data.username,
-					"rank": data.pp_rank,
-					"pp": data.pp_raw,
-					"channel": msg.channel.id,
-					"mode": osu.mode,
-					"recent": ""
-				};
-				trackedchannels.items.forEach(function(command) {
-					osusearch(user, msg, command);
-					if (jjj === 1) return;
-				});
+				var searchTerm = data.username.toLowerCase();
+				var index = -1;
+				for (var i = 0; i < trackedchannels.items.length; i++) {
+					if (trackedchannels.items[i] === null) i++;
+					if (trackedchannels.items[i].username.toLowerCase() === searchTerm) {
+						if (trackedchannels.items[i].mode === osu.mode) {
+							index = i;
+							break;
+						}
+					}
+				}
+				if (index > -1) {
+					trackedchannels.items[i].channel = trackedchannels.items[i].channel + ", " + msg.channel.id
+					fs.writeFileSync(filename, JSON.stringify(trackedchannels, null, 4));
+					return;
+				}
+				else {
+					var user = {
+						"username": data.username,
+						"rank": data.pp_rank,
+						"pp": data.pp_raw,
+						"channel": msg.channel.id,
+						"mode": osu.mode,
+						"recent": "",
+						"inactivity": 0
+					};
+				}
 			}
-			if (jjj != 1) {
-				trackedchannels[msg.channel].items.push(user);
-			}
+			trackedchannels.items.push(user);
 			fs.writeFileSync(filename, JSON.stringify(trackedchannels, null, 4));
-			jjj = 0;
 		});
 	}
 };
@@ -297,22 +418,6 @@ Commands.customcommands = {
 		}
 	}
 };
-
-function osusearch(user, msg, command) {
-	for (var i = 0; i < trackedchannels[msg.channel].items.length; i++) {
-		if (trackedchannels[msg.channel].items[i] === null) return;
-		if (trackedchannels[msg.channel].items[i].channel === user.channel) {
-			if (trackedchannels[msg.channel].items[i].Username === user.username) {
-				//delete cccoms.items[i]
-				trackedchannels[msg.channel].items[i].Username = user.username;
-				trackedchannels[msg.channel].items[i].channel = user.channel;
-				trackedchannels[msg.channel].items[i].Rank = user.rank;
-				trackedchannels[msg.channel].items[i].pp = user.pp;
-				jjj = 1;
-			}
-		}
-	}
-}
 
 Commands.setstafflog = {
 	"name": "setstafflog",

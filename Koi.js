@@ -19,9 +19,9 @@ taikotracker = require("./runtime/taikotracker.json");
 ctbtracker = require("./runtime/ctbtracker.json");
 maniatracker = require("./runtime/maniatracker.json");
 bannedcommands = require("./runtime/bannedcommands.json");
-allchannels = require('require-all')(__dirname + '/runtime/osutracking');
-asdfasdf = [];
 var functions = require("./runtime/functions.js");
+trackedchannels = require("./runtime/osutracking/db.json");
+events = require("./runtime/events.json");
 command1 = "";
 
 
@@ -50,6 +50,7 @@ bot.on("ready", function() {
   functions.startTaikoTrack(bot);
   functions.startCtbTrack(bot);
   functions.startManiaTrack(bot);
+  functions.eventAnnounce(bot)
 });
 
 bot.on("serverNewMember", function(server, user) {
