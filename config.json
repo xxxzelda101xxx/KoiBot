@@ -13,6 +13,10 @@
     "api_keys" : {
 		"osu_api_key": ""
     },
+	"anilist" : {
+		"id": "-xuswu",
+		"secret": ""
+	},
 	"mal" : {
 		"user": "",
 		"pass": ""

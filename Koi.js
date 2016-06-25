@@ -15,13 +15,10 @@ offlineStreamers = [];
 onlineStreamers = [];
 unirest = require('unirest');
 osutracking = require("./runtime/osutracking.js");
-taikotracker = require("./runtime/taikotracker.json");
-ctbtracker = require("./runtime/ctbtracker.json");
-maniatracker = require("./runtime/maniatracker.json");
 bannedcommands = require("./runtime/bannedcommands.json");
-var functions = require("./runtime/functions.js");
 trackedchannels = require("./runtime/osutracking/db.json");
 events = require("./runtime/events.json");
+var functions = require("./runtime/functions.js");
 command1 = "";
 
 
@@ -39,17 +36,20 @@ catch(e) {
 	cccoms = {};
 }
 
+bot.on("error", function(error) {
+	Logger.error("Encounterd an error, please report this to the author of this bot, include any log files present in the logs folder.");
+	process.exit(0)
+});
+
+
+
 bot.on("ready", function() {
   Logger.info("Ready to start!");
   Logger.info("Logged in as " + bot.user.username + ".");
   Logger.info("Serving " + bot.users.length + " users, in " + bot.servers.length + " servers.");
-  bot.setStatus("online", "!help for commands") 
   functions.startPolling(bot);
   functions.startPunishDown(bot);
-  functions.startOsuTrack(bot);
-  functions.startTaikoTrack(bot);
-  functions.startCtbTrack(bot);
-  functions.startManiaTrack(bot);
+  //functions.startOsuTrack(bot);
   functions.eventAnnounce(bot)
 });
 
@@ -71,6 +71,7 @@ bot.on("userUnbanned", function(user, server) {
 
 bot.on("disconnected", function() {
   Logger.warn("Disconnected, if this wasn't a connection issue or on purpose, report this issue to the author of the bot.");
+  process.exit(0)
 });
 
 bot.on("presence", function(oldUser, newUser) {
@@ -83,7 +84,7 @@ bot.on("message", function(msg) {
 		var n = d.toUTCString();
 		ChatLogger.info(n + ": " + msg.channel.server.name + ", " + msg.channel.name + ": " + msg.author.username + " said <" + msg + ">");
 	}
-	if (msg.mentions.length === 1) {
+	if (msg.mentions.length  === 1) {
 		functions.pmMessages(bot, msg)
 	}
 	if (msg.author.equals(bot.user)) {
@@ -123,13 +124,13 @@ bot.on("message", function(msg) {
 		});
 		if (customcomcom === command) {
 			Permissions.GetIgnore(msg.channel, function(err, reply) {
-				if (reply === "no") {
+				if (reply === "off" || reply === "no") {
 					bot.sendMessage(msg.channel, customcomresponse)
 					customcomresponse = false;
 					customcomcom = false;
 					return;
 				}
-				else if (reply === "yes") {
+				else if (reply === "on" || reply === "yes") {
 					Permissions.GetLevel((msg.channel.server.id + msg.author.id), msg.author.id, function(err, level) {
 						if (level >= 3) {
 						  if (msg.channel.server.id != "118689714319392769") return;
@@ -167,13 +168,13 @@ bot.on("message", function(msg) {
 								bot.sendMessage(msg.channel, "Sorry, an error occured, try again later.");
 								return;
 							}
-							if (msg.content === "!setignore yes" || msg.content === "!setignore no") {
+							if (msg.content === "!setignore on" || msg.content === "!setignore off") {
 								if (level >= Commands["setignore"].level) {
 									Commands["setignore"].fn(bot, msg, suffix);
 									return;
 								}
 							}
-							else if (reply === "yes") {
+							else if (reply === "on" || reply === "yes") {
 								if (msg.channel.id === "118689714319392769") {
 									if (msg.content === "!lastmention") {
 										Commands["lastmention"].fn(bot, msg, suffix);
@@ -183,14 +184,13 @@ bot.on("message", function(msg) {
 								if (level >= 3) {
 									if (!Commands[command].nsfw) {
 										if (level >= Commands[command].level) {
-											if (msg.channel.server.id != "118689714319392769") return;
 											Commands[command].fn(bot, msg, suffix);
 											return;
 										}
 									}
 								}
 							}
-							else if (reply === "no") {
+							else if (reply === "off" || reply === "no") {
 								if (level >= Commands[command].level) {
 									if (!Commands[command].nsfw) {
 										if (msg.content.toLowerCase() === "!botstatus") {

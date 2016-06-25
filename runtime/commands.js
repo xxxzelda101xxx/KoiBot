@@ -12,15 +12,9 @@ var ConfigFile = require("../config.json"),
 	fs = require('fs'),
 	exec = require('child_process').exec,
 	http = require('http'),
-	confirmCodes = [],
-	announceMessages = [],
 	twitchStreamers = require("./streamers.json"),
 	customcommands = require("./ccommands.json"),
 	trackedchannels = require("./osutracking/db.json"),
-	taikotracker = require("./taikotracker.json"),
-	ctbtracker = require("./ctbtracker.json"),
-	maniatracker = require("./maniatracker.json"),
-	allchannels = require('require-all')(__dirname + '/osutracking'),
 	bannedcommands = require("./bannedcommands.json"),
 	mutemessage = [],
 	unmutemessage = [],
@@ -34,164 +28,241 @@ var ConfigFile = require("../config.json"),
 var osu = new osuapi.Api(ConfigFile.api_keys.osu_api_key);
 var Commands = [];
 
+Commands.mapsearch = {
+	"name": "mapsearch",
+	level: 0,
+	fn: function(bot, msg, suffix) {
+		var array = [];
+		osu.getBeatmapsRaw({ since : suffix }, function(err, data){
+			for (var i = 0; i < osumaps.items.length; i++) {
+				array.push(osumaps.items[i].beatmap_id)
+			}
+			//console.log(array)
+			for (var j = 0; j < data.length; j++) {
+				console.log(j)
+				if (array.indexOf(data[j].beatmap_id) < 0) {
+					osumaps.items.push(data[j])
+				}
+			}
+		})
+		fs.writeFileSync(`${__dirname}/osumaps.json`, JSON.stringify(osumaps, null, 2), null);
+	}
+};
+
+
+Commands.forcecheck = {
+	"name": "forcecheck",
+	level: 0,
+	fn: function(bot, msg, suffix) {
+		console.log(suffix)
+		if (!suffix) {
+			bot.sendMessage(msg.channel, "You didn't tell me who to check!")
+			return;
+		}
+		else {
+			for (var i = 0; i < trackedchannels.items.length; i++) {
+				console.log(trackedchannels.items[i].username)
+				if (trackedchannels.items[i].username === suffix.toLowerCase()) {
+					//console.log(trackedchannels.items[i].inactivity)
+					//console.log("hi")
+					trackedchannels.items[i].inactivity = 0
+				}
+				if ((i+1) === trackedchannels.items.length) {
+					fs.writeFileSync(__dirname+"/osutracking/db.json", JSON.stringify(trackedchannels, null, 4));
+				}
+			}
+		}
+	}
+};
+
+Commands.roll = {
+	"name": "roll",
+	level: 0,
+	fn: function(bot, msg, suffix) {
+		if (!suffix) {
+			var randomint = Math.floor((Math.random() * 100) + 1)
+			bot.sendMessage(msg.channel, `**${msg.author.username}** rolled **${randomint}**!`)
+		}
+		else {
+			if (isNaN(suffix)) {
+				var randomint = Math.floor((Math.random() * 100) + 1)
+				bot.sendMessage(msg.channel, `**${msg.author.username}** rolled **${randomint}**!`)
+			}
+			else {
+				var randomint = Math.floor((Math.random() * suffix) + 1)
+				var numbtosend = parseInt(randomint)
+				if (numbtosend <= 0) {
+					numbtosend = 1
+				}
+				if (numbtosend > 999999999999999999) {
+					numbtosend = 999999999999999999
+				}
+				bot.sendMessage(msg.channel, `**${msg.author.username}** rolled **${numbtosend}**!`)
+			}
+		}
+	}
+};
+
 Commands.eventannounce = {
 	"name": "eventannounce",
 	level: 3,
 	fn: function(bot, msg, suffix) {
+		var response = false;
+		var time = false;
+		var messageeee = false;
+		var name = false;
+		var eventChannel = ""
 		if (!suffix) {
-			bot.awaitResponse(msg, "What would you like the message to say?", {}, function(error, message) {
-				if (error) {
-					bot.sendMessage(msg.channel, error);
-					return;
-				}
-				bot.getChannelLogs(msg.channel, 100, function(error, messages) {
-					for (var i = 0; i < 100; i++) {
-						if (messages[i].author.id == msg.author.id) {
-							var response = messages[i].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ")
-							break
-						}
+			fixresponse(bot, msg, suffix, "What would you like the message to say?", false, function(result) {
+				response = result
+				fixresponse(bot, msg, suffix, "How often would you like me to repeat this message (in minutes)?", true, function(result) {
+					time = parseInt(result)
+					if (time < 10) {
+						time = 10
 					}
-					bot.awaitResponse(msg, "How often would you like me to repeat this message (in minutes)?", {}, function(error, message) {
-						if (error) {
-							bot.sendMessage(msg.channel, error);
-							return
-						}
-						bot.getChannelLogs(msg.channel, 100, function(error, messages) {
-							for (var i = 0; i < 100; i++) {
-								if (messages[i].author.id == msg.author.id) {
-									var time = parseInt(messages[i].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " "))
-									break
+					fixresponse(bot, msg, suffix, "Which channel(s) do you want to send this message to?", false, function(result) {
+						messageeee = result
+						fixresponse(bot, msg, suffix, "Assign a name to this so you can manage it later.", false, function(result) {
+							name = result
+							
+							for (var j = 0; j < (messageeee.trim().split(" ").length); j++) {
+								if (messageeee.split(" ")[j].indexOf("<") < 0 || messageeee.indexOf(">") < 0 || messageeee.indexOf("#") < 0) {}
+								else {
+									var channeltocheck = messageeee.split(" ")[j].replace("<", "").replace(">", "").replace("#", "");
+									var channelisvalid = msg.channel.server.channels.get("id", channeltocheck)
+									if (channelisvalid) {
+										if (eventChannel === "") {
+											eventChannel = channelisvalid.id
+										}
+										else {
+											eventChannel = eventChannel + ", " + channelisvalid.id
+										}
+									}
 								}
 							}
-							bot.awaitResponse(msg, "Which channel(s) do you want to send this message to?", {}, function(error, message) {
-								if (error) {
-									bot.sendMessage(msg.channel, error);
-									return;
+							var event = {
+								"time": time,
+								"lastsent": msg.timestamp,
+								"response": response,
+								"channel": eventChannel,
+								"server": msg.channel.server.id,
+								"name": name
+							};
+							var eventchanneltag = ""
+							if (eventChannel != "") {
+								for (var i = 0; i < eventChannel.split(", ").length; i++) {
+									if (eventchanneltag === "") {
+										eventchanneltag = "<#" + eventChannel.split(", ")[i] + ">"
+									}
+									else {
+										eventchanneltag = eventchanneltag + ", <#" + eventChannel.split(", ")[i] + ">"
+									}
 								}
-								bot.getChannelLogs(msg.channel, 100, function(error, messages) {
-									var eventChannel = ""
-									for (var i = 0; i < 100; i++) {
-										if (messages[i].author.id == msg.author.id) {
-											var messageeee = messages[i].content.trim();
-											break;
-										}
-									}
-									for (var j = 0; j < (messageeee.trim().split(" ").length); j++) {
-										if (messageeee.split(" ")[j].indexOf("<") < 0 || messageeee.indexOf(">") < 0 || messageeee.indexOf("#") < 0) { console.log("hi"); }
-										else {
-											var channeltocheck = messageeee.split(" ")[j].replace("<", "").replace(">", "").replace("#", "");
-											var channelisvalid = msg.channel.server.channels.get("id", channeltocheck)
-											if (channeltocheck) {
-												if (eventChannel === "") {
-													eventChannel = channelisvalid.id
-												}
-												else {
-													eventChannel = eventChannel + ", " + channelisvalid.id
-												}
-											}
-										}
-									}
-									
-									var event = {
-										"time": time,
-										"lastsent": msg.timestamp,
-										"response": response,
-										"channel": eventChannel
-									};
-									var eventchanneltag = ""
-									for (var i = 0; i < eventChannel.split(", ").length; i++) {
-										console.log(eventChannel.split(", ")[i])
-										if (eventchanneltag === "") {
-											eventchanneltag = "<#" + eventChannel.split(", ")[i] + ">"
-											console.log(eventchanneltag)
-										}
-										else {
-											eventchanneltag = eventchanneltag + ", <#" + eventChannel.split(", ")[i] + ">"
-											console.log(eventchanneltag)
-										}
-									}
-									events.items.push(event);
-									fs.writeFileSync("./runtime/events.json", JSON.stringify(events, null, 2), null);
-									bot.sendMessage(msg.channel, `I will send the message: **${response}** every **${time}** minute(s) in ${eventchanneltag}`)
-									return;
-								})
-							})
+								events.items.push(event);
+								fs.writeFileSync("./runtime/events.json", JSON.stringify(events, null, 2), null);
+								bot.sendMessage(msg.channel, `I will send the message: **${response}** every **${time}** minute(s) in ${eventchanneltag}`)
+								return;
+							}
+							else {
+								bot.sendMessage(msg.channel, "You didn't give me any valid channels to send the message to. Start over. ðŸ˜¡")
+							}
 						})
 					})
 				})
 			})
 		}
 		else {
-			var time = ""
-			suffix = suffix.trim()
-			for (var i = 0; i < suffix.length; i++) {
-				if (!isNaN(suffix[i])) {
-					time = time + suffix[i]
-				}
-				else {
-					var response = suffix.substring(time.length)
-					time = time.trim()
-					break
+			var searchTerm = suffix;
+			var index = -1;
+			for (var i = 0; i < events.items.length; i++) {
+				if (events.items[i].name.toLowerCase() === suffix.toLowerCase() || events.items[i].response === suffix) {
+					if (events.items[i].server === msg.channel.server.id) {
+						index = i;
+						break;
+					}
 				}
 			}
-			var event = {
-					"time": time,
-					"response": response,
-					"channel": msg.channel.id
-			};
-			events.items.push(event);
-			fs.writeFileSync("./runtime/events.json", JSON.stringify(events, null, 2), null);
-			bot.sendMessage(msg.channel, `I will send the message: **${response}** every **${time}** minutes!`);
-			return;
+			if (index < 0) {
+				bot.sendMessage(msg.channel, "`"+suffix+"` wasn't found. Either use the name you gave the eventannounce message, or copy and paste the respsonse!")
+				return;
+			}
+			fixresponse(bot, msg, suffix, "Would you like to delete or edit `"+events.items[i].name+"`?", false, function(result) {
+				if (result.toLowerCase() === "delete") {
+					bot.sendMessage(msg.channel, "`"+events.items[i].name+"` has been deleted.");
+					events.items.splice(index, 1);
+					fs.writeFileSync("./runtime/events.json", JSON.stringify(events, null, 2), null);
+					return;
+				}
+			})
 		}
 	}
 }
 
-Commands.temporary = {
-	"name": "temporary",
-	level: 0,
-	fn: function(bot, msg, suffix) {
-		if (msg.channel.isPrivate) return;
-		var doomsserver = bot.servers.get("id", msg.channel.server.id);
-		var role1 = doomsserver.roles.get("name", "Discord Mod");
-		var role2 = doomsserver.roles.get("name", "NSFW Overlord")
-		if (role1) {
-			if (!msg.channel.permissionsOf(msg.author).hasPermission("manageRoles") && msg.channel.server.membersWithRole(role1).indexOf(msg.author) < 0 && !msg.channel.permissionsOf(msg.author).hasPermission("administrator") && msg.channel.server.membersWithRole(role2).indexOf(msg.author) < 0) {
-				bot.sendMessage(msg, "You don't have permission to use this command.");
-				return;
-			}
-			if (msg.mentions.length < 1) {
-				bot.sendMessage(msg.channel, "You didn't mention any users!");
-				return;
-			}
-			msg.mentions.map(function(user) {
-				var doomsserver = bot.servers.get("id", msg.channel.server.id);
-				var role = doomsserver.roles.get("name", "Temporary");
-				var d = new Date();
-				var miliseconds = d.getTime();
-				var testing1234 = {
-					"userid": user.id,
-					"serverid": msg.channel.server.id,
-					"joined": miliseconds
-				};
-				doomsday.items.push(testing1234);
-				fs.writeFileSync("./runtime/doomsday.json", JSON.stringify(doomsday, null, 2), null);
-				bot.addMemberToRole(user, role, (e) => {
-					if (e) {
-						bot.sendMessage(msg, "An error occured. Try again.");
-						console.log(e);
+function fixresponse(bot, msg, suffix, prompt, number, callback) {
+	bot.awaitResponse(msg, prompt, {}, function(error, message) {
+		if (error) {
+			bot.sendMessage(msg.channel, error);
+			return;
+		}
+		bot.getChannelLogs(msg.channel, 100, function(error, messages) {
+			for (var i = 0; i < 100; i++) {
+				if (messages[i].author.id == msg.author.id) {
+					if (number) {
+						var response = messages[i].content.replace(/@everyone/gi, " ").replace(/@here/gi, " ")
+						if (isNaN(response)) {
+							bot.awaitResponse(msg, prompt, {}, function(error, message) {
+								bot.getChannelLogs(msg.channel, 100, function(error, messages) {
+									for (var i = 0; i < 100; i++) {
+										if (messages[i].author.id == msg.author.id) {
+											var response = messages[i].content.replace(/@everyone/gi, " ").replace(/@here/gi, " ")
+											console.log(response)
+											if (isNaN(response)) {
+												bot.sendMessage(msg.channel, "I give up ðŸ”«")
+												return;
+											}
+											else {
+												callback(response)
+											}
+											break
+										}
+									}
+								})
+							})
+							break;
+						}
+						else {
+							callback(response)
+							break;
+						}
 					}
 					else {
-						bot.sendMessage(msg, "Granted " + user + " 24 hours of temporary access!");
+						var response = messages[i].content.replace(/@everyone/gi, " ").replace(/@here/gi, " ");
+						callback(response)
+						break;
 					}
-				});
-			});
+				}
+			}
+		})
+	})
+}
+
+function igiveup (bot, msg, suffix, prompt, number, callback) {
+	bot.awaitResponse(msg, prompt, {}, function(error, message) {
+		for (var i = 0; i < 100; i++) {
+			if (messages[i].author.id == msg.author.id) {
+				var response = messages[i].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ")
+				if (isNaN(response)) {
+					bot.sendmessage(msg.channel, "I give up ðŸ”«")
+					return;
+				}
+				else {
+					callback(response)
+				}
+				break
+			}
 		}
-		else {
-			bot.sendMessage(msg.channel, "An error occured.");
-		}
-	}
-};
+	})
+}
 
 Commands.disablecommand = {
 	name: "disablecommand",
@@ -285,9 +356,12 @@ Commands.enablecommand = {
 
 Commands.track = {
 	"name": "track",
-	level: 0,
+	level: 6,
 	fn: function(bot, msg, suffix) {
 		switch (suffix.split(" ")[0].toLowerCase()) {
+			case "osu":
+				osu.setMode(0);
+				break;
 			case "taiko":
 				osu.setMode(1);
 				break;
@@ -298,7 +372,7 @@ Commands.track = {
 				osu.setMode(3);
 				break;
 		}
-		var path = `./osutracking/db.json`;
+		var path = `${__dirname}/osutracking/db.json`;
 		try {
 			fs.accessSync(path, fs.F_OK);
 		}
@@ -312,26 +386,36 @@ Commands.track = {
 		}
 		var filename = `${__dirname}/osutracking/db.json`;
 		var mode = String(osu.mode).replace('0', 'osu!').replace('1', 'Taiko').replace('2', 'Catch The Beat').replace('3', 'Mania');
+		
+		console.log(mode)
 		if (!suffix.split(" ")[1]) {
 			var currentOsu = [];
-			trackedchannels.items.forEach(function(osu) {
-				if (osu) {
-					if (osu.channel === msg.channel.id) {
-						currentOsu.push(osu.Username);
+			for (var i = 0; i < trackedchannels.items.length; i++) {
+				for (var j = 0; j < trackedchannels.items[i].channel.split(", ").length; j++) {
+					if (trackedchannels.items[i].channel.split(", ")[j] === msg.channel.id) {
+						if (trackedchannels.items[i].mode === osu.mode) {
+							currentOsu.push(trackedchannels.items[i].username);
+						}
 					}
 				}
-			});
+			}
 			currentOsu = currentOsu.join(", ");
 			if (currentOsu === "" || currentOsu === " ") {
 				bot.sendMessage(msg.channel, `Not currently tracking any ${mode} players in ${msg.channel}`);
 				return;
 			}
 			else {
-				bot.sendMessage(msg.channel, `Currently tracking the following ${mode} players in ${msg.channel}:${currentOsu}`);
+				bot.sendMessage(msg.channel, `Currently tracking the following ${mode} players in ${msg.channel}: ${currentOsu}`);
 				return;
 			}
 		}
-		suffix = suffix.substring(4);
+		if (suffix.split(" ")[0] === "osu" || suffix.split(" ")[0] === "ctb") {
+			suffix = suffix.substring(4);
+		}
+		else if (suffix.split(" ")[0] === "taiko" || suffix.split(" ")[0] === "mania") {
+			suffix = suffix.substring(6);
+		}
+		console.log(suffix)
 		osu.getUser(suffix, function(err, data) {
 			if (err) console.error(err);
 			if (!data) {
@@ -345,13 +429,15 @@ Commands.track = {
 					if (trackedchannels.items[i] === null) i++;
 					if (trackedchannels.items[i].username.toLowerCase() === searchTerm) {
 						if (trackedchannels.items[i].channel === msg.channel.id) {
-							index = i;
-							break;
+							if (trackedchannels.items[i].mode === osu.mode) {
+								index = i;
+								break;
+							}
 						}
 					}
 				}
 				if (index > -1) {
-					bot.sendMessage(msg.channel, `No longer tracking **${mode}** gains for **${trackedchannels.items[index].Username}** in ${msg.channel}`);
+					bot.sendMessage(msg.channel, `No longer tracking **${mode}** gains for **${trackedchannels.items[index].username}** in ${msg.channel}`);
 					trackedchannels.items.splice(index, 1);
 					fs.writeFileSync(filename, JSON.stringify(trackedchannels, null, 4));
 					return;
@@ -375,7 +461,7 @@ Commands.track = {
 				}
 				else {
 					var user = {
-						"username": data.username,
+						"username": data.username.toLowerCase(),
 						"rank": data.pp_rank,
 						"pp": data.pp_raw,
 						"channel": msg.channel.id,
@@ -442,26 +528,6 @@ Commands.setstafflog = {
 	}
 };
 
-Commands.contact = {
-	"name": "contact",
-	level: 3,
-	fn: function(bot, msg, suffix) {
-		bot.sendMessage(msg.channel, "Please join my support server if you are having issues with Koi. http://discord.gg/0vAsDJGEnPOcdmHX");
-	}
-};
-
-Commands.botservers = {
-	"name": "botservers",
-	level: 5,
-	fn: function(bot, msg, suffix) {
-		var botservers = [];
-		for (var i = 0; i < bot.servers.length; i++) {
-			botservers.push("Server name: `" + bot.servers[i].name + "` Members: `" + bot.servers[i].members.length + "`");
-		}
-		bot.sendMessage(msg.channel, botservers);
-	}
-};
-
 Commands.lastmention = {
 	"name": "lastmention",
 	level: 0,
@@ -478,43 +544,80 @@ Commands.lastmention = {
 		if (!mentionchannel) {
 			mentionchannel = msg.channel;
 		}
-		bot.getChannelLogs(mentionchannel, 100, function(error, messages) {
-			if (error) {
-				bot.sendMessage(msg.channel, "Something went wrong while fetching logs.");
+		var channelaccess = mentionchannel.permissionsOf(msg.author).serialize()
+		if (channelaccess.readMessages != true) {
+			bot.sendMessage(msg.channel, "You don't have access to that channel.")
+			return;
+		}
+		var mentionchannelnsfw = "1"
+			var currentnsfw = "1"
+		Permissions.GetNSFW(mentionchannel, function(err, reply) {
+			if (err) {
 				return;
 			}
+			if (reply === "on") {
+				mentionchannelnsfw = "true"
+			}
 			else {
-				var userid = msg.author.id;
-				for (var i = 0; i < 100; i++) {
-					if (messages[i].content.indexOf(userid) > -1) {
-						if (messages[i].author.id != "125841801797042177") {
-							bot.getChannelLogs(mentionchannel, 4, {
-								before: messages[i]
-							}, function(error, prevmessages) {
-								if (error) {
-									bot.sendMessage(msg.channel, "Something went wrong while fetching logs.");
-									return;
-								}
-								else {
-									var timestamp1 = discordtimestamp(prevmessages[3].timestamp);
-									var timestamp2 = discordtimestamp(prevmessages[2].timestamp);
-									var timestamp3 = discordtimestamp(prevmessages[1].timestamp);
-									var timestamp4 = discordtimestamp(prevmessages[0].timestamp);
-									var timestamp5 = discordtimestamp(messages[i].timestamp);
-									bot.sendMessage(msg.channel, "Latest mention in " + mentionchannel + ": \n" + timestamp1 + " UTC **" + prevmessages[3].author.username + "**: " + prevmessages[3].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ") + "\n" + timestamp2 + " UTC **" + prevmessages[2].author.username + "**: " + prevmessages[2].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ") + "\n" + timestamp3 + " UTC **" + prevmessages[1].author.username + "**: " + prevmessages[1].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ") + "\n" + timestamp4 + " UTC **" + prevmessages[0].author.username + "**: " + prevmessages[0].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ") + "\n" + timestamp5 + " UTC **" + messages[i].author.username + "**: " + messages[i].content.replace(/@everyone/gi, " ").replace(/@here/gi, " "));
-								}
-							});
-							break;
+				mentionchannelnsfw = "false"
+			}
+		})
+		Permissions.GetNSFW(msg.channel, function(err, reply) {
+			if (err) {
+				return;
+			}
+			if (reply === "on") {
+				currentnsfw = "true"
+			}
+			else {
+				currentnsfw = "false"
+			}
+		})
+		setTimeout(function() { 
+			console.log("mentionchannelnsfw " + mentionchannelnsfw)
+			console.log("currentnsfw " + currentnsfw)
+			if (mentionchannelnsfw === "true" && currentnsfw === "false") {
+				bot.sendMessage(msg.channel, "I can't do that for uhhh.... lewd reasons.")
+				return
+			}
+			bot.getChannelLogs(mentionchannel, 100, function(error, messages) {
+				if (error) {
+					bot.sendMessage(msg.channel, "Something went wrong while fetching logs.");
+					return;
+				}
+				else {
+					var userid = msg.author.id;
+					for (var i = 0; i < 100; i++) {
+						if (messages[i].content.indexOf(userid) > -1) {
+							if (messages[i].author.id != "125841801797042177") {
+								bot.getChannelLogs(mentionchannel, 4, {
+									before: messages[i]
+								}, function(error, prevmessages) {
+									if (error) {
+										bot.sendMessage(msg.channel, "Something went wrong while fetching logs.");
+										return;
+									}
+									else {
+										var timestamp1 = discordtimestamp(prevmessages[3].timestamp);
+										var timestamp2 = discordtimestamp(prevmessages[2].timestamp);
+										var timestamp3 = discordtimestamp(prevmessages[1].timestamp);
+										var timestamp4 = discordtimestamp(prevmessages[0].timestamp);
+										var timestamp5 = discordtimestamp(messages[i].timestamp);
+										bot.sendMessage(msg.channel, "Latest mention in " + mentionchannel + ": \n" + timestamp1 + " UTC **" + prevmessages[3].author.username + "**: " + prevmessages[3].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ") + "\n" + timestamp2 + " UTC **" + prevmessages[2].author.username + "**: " + prevmessages[2].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ") + "\n" + timestamp3 + " UTC **" + prevmessages[1].author.username + "**: " + prevmessages[1].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ") + "\n" + timestamp4 + " UTC **" + prevmessages[0].author.username + "**: " + prevmessages[0].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ") + "\n" + timestamp5 + " UTC **" + messages[i].author.username + "**: " + messages[i].content.replace(/@everyone/gi, " ").replace(/@here/gi, " "));
+									}
+								});
+								break;
+							}
+						}
+						if (i === 99) {
+							z = messages[i];
+							attempts++;
+							lastmention(bot, msg, suffix, v, z, attempts, mentionchannel);
 						}
 					}
-					if (i === 99) {
-						z = messages[i];
-						attempts++;
-						lastmention(bot, msg, suffix, v, z, attempts, mentionchannel);
-					}
 				}
-			}
-		});
+			});
+		}, 500);
 	}
 };
 
@@ -1014,6 +1117,7 @@ Commands.mute = {
 	name: "mute",
 	level: 0,
 	fn: function(bot, msg, suffix) {
+		suffix = suffix.trim()
 		if (msg.channel.isPrivate) return;
 		if (!msg.channel.permissionsOf(bot.user).hasPermission("manageChannels")) {
 			bot.sendMessage(msg, "I don't have the permission `Manage Channels`! I must have this permission for `!mute` to function correctly!");
@@ -1061,7 +1165,6 @@ Commands.mute = {
 		if (!isNaN(suffix.split(" ")[1])) {
 			msg.mentions.map((user) => {
 				if (user.id === msg.author.id) {
-					bot.sendMessage(msg.channel, "You can't mute yourself!");
 					return;
 				}
 				bot.sendMessage(msg.channel, user + " will be automatically unmuted in " + suffix.split(" ")[1] + " minutes.");
@@ -1148,7 +1251,6 @@ Commands.twitchalert = {
 			bot.sendMessage(msg.channel, "Please supply a twitch name, not a twitch url.");
 			return;
 		}
-		//streams = suffix+", "+msg.channel.id;
 		var searchTerm = suffix.toLowerCase(),
 			index = -1;
 		for (var i = 0; i < twitchStreamers.items.length; i++) {
@@ -1196,7 +1298,11 @@ Commands.createcommand = {
 			bot.sendMessage(msg.channel, "Syntax error. Correct usage: `!createcommand <command name> | <text>`. Command name cannot contain spaces.");
 			return;
 		}
-		var customcom = suffix.split(" ")[0].toLowerCase();
+		var customcom = suffix.split(" ")[0].toLowerCase().trim()
+		if (suffix.split(" ")[1] != "|") {
+			bot.sendMessage(msg.channel, "Custom commands can't contain spaces!")
+			return;
+		}
 		var customresponse = suffix.replace(customcom + " | ", "").trim();
 		if (Commands[customcom] || customcom === "help") {
 			bot.sendMessage(msg.channel, "Overwriting commands with custom commands is not allowed!");
@@ -1603,7 +1709,7 @@ Commands.delchannel = {
 	}
 };
 
-Commands.add2dnsfw = {
+Commands.addnsfw = {
 	name: "add2dnsfw",
 	level: 0,
 	fn: function(bot, msg, suffix, user) {
@@ -1619,19 +1725,19 @@ Commands.add2dnsfw = {
 				return;
 			}
 			user = msg.author.id;
-			role = msg.channel.server.roles.get("name", "Channel Role - 2D NSFW");
+			role = msg.channel.server.roles.get("name", "Channel Role - NSFW");
 			if (role) {
 				bot.addMemberToRole(user, role, (e) => {
 					if (e) {
-						bot.sendMessage(msg.channel, "Error adding <@" + user + "> to `Channel Role - 2D NSFW`!` " + e + "`");
+						bot.sendMessage(msg.channel, "Error adding <@" + user + "> to `Channel Role - NSFW`!` " + e + "`");
 					}
 					else {
-						bot.sendMessage(msg.channel, "Successfully gave <@" + user + "> the `Channel Role - 2D NSFW`!");
+						bot.sendMessage(msg.channel, "Successfully gave <@" + user + "> the `Channel Role - NSFW`!");
 					}
 				});
 			}
 			else {
-				bot.sendMessage(msg.channel, "The role `Channel Role - 2D NSFW` doesn't exist!");
+				bot.sendMessage(msg.channel, "The role `Channel Role - NSFW` doesn't exist!");
 			}
 			return;
 		}
@@ -1639,15 +1745,15 @@ Commands.add2dnsfw = {
 			bot.sendMessage(msg.channel, "You must mention the users you want to add the NSFW role to!");
 			return;
 		}
-		role = msg.channel.server.roles.get("name", "Channel Role - 2D NSFW");
+		role = msg.channel.server.roles.get("name", "Channel Role - NSFW");
 		if (role) {
 			msg.mentions.map((user) => {
 				bot.addMemberToRole(user, role, (e) => {
 					if (e) {
-						bot.sendMessage(msg.channel, "Error adding " + user + " to `Channel Role - 2D NSFW`!` " + e + "`");
+						bot.sendMessage(msg.channel, "Error adding " + user + " to `Channel Role - NSFW`!` " + e + "`");
 					}
 					else {
-						bot.sendMessage(msg.channel, "Successfully gave " + user + " `Channel Role - 2D NSFW`!");
+						bot.sendMessage(msg.channel, "Successfully gave " + user + " `Channel Role - NSFW`!");
 					}
 				});
 			});
@@ -1655,68 +1761,6 @@ Commands.add2dnsfw = {
 		else {
 			var msgArray = [];
 			msgArray.push("The role `Channel Role - NSFW` doesn't exist!");
-			msgArray.push("This command doesn't do anything if it doesn't exist.");
-			msgArray.push("If you just want a public #nsfw text channel, just use `!setnsfw on` in that text channel.");
-			msgArray.push("");
-			msgArray.push("Create this role and then give it the permission to `Read Messages` in a text channel. http://i.imgur.com/LpzIr7b.png");
-			msgArray.push("Remember to remove the permission `Read Messages` from everyone so they can't the text channel!! http://i.imgur.com/i0dzFoU.png");
-			bot.sendMessage(msg.author, msgArray);
-		}
-	}
-};
-
-Commands.add3dnsfw = {
-	name: "add3dnsfw",
-	level: 0,
-	fn: function(bot, msg, suffix, user) {
-		var role;
-		if (msg.channel.isPrivate) return;
-		if (!msg.channel.permissionsOf(bot.user).hasPermission("manageRoles")) {
-			bot.sendMessage(msg, "I don't have the permission `Manage Roles`! I must have this permission for `!addnsfw` to function correctly!");
-			return;
-		}
-		if (!msg.channel.permissionsOf(msg.author).hasPermission("manageRoles")) {
-			if (msg.mentions.length > 0) {
-				bot.sendMessage(msg.channel, "You mentioned another user. Since you don't have the permission `Manage Roles`, you can't change other users roles!");
-				return;
-			}
-			user = msg.author.id;
-			role = msg.channel.server.roles.get("name", "Channel Role - 3D NSFW");
-			if (role) {
-				bot.addMemberToRole(user, role, (e) => {
-					if (e) {
-						bot.sendMessage(msg.channel, "Error adding <@" + user + "> to `Channel Role - 3D NSFW`!` " + e + "`");
-					}
-					else {
-						bot.sendMessage(msg.channel, "Successfully gave <@" + user + "> the `Channel Role - 3D NSFW`!");
-					}
-				});
-			}
-			else {
-				bot.sendMessage(msg.channel, "The role `Channel Role - 3D NSFW` doesn't exist!");
-			}
-			return;
-		}
-		if (msg.mentions.length < 1) {
-			bot.sendMessage(msg.channel, "You must mention the users you want to add the 3D NSFW role to!");
-			return;
-		}
-		role = msg.channel.server.roles.get("name", "Channel Role - 3D NSFW");
-		if (role) {
-			msg.mentions.map((user) => {
-				bot.addMemberToRole(user, role, (e) => {
-					if (e) {
-						bot.sendMessage(msg.channel, "Error adding " + user + " to `Channel Role - 3D NSFW`!` " + e + "`");
-					}
-					else {
-						bot.sendMessage(msg.channel, "Successfully gave " + user + " `Channel Role - 3D NSFW`!");
-					}
-				});
-			});
-		}
-		else {
-			var msgArray = [];
-			msgArray.push("The role `Channel Role - 3D NSFW` doesn't exist!");
 			msgArray.push("This command doesn't do anything if it doesn't exist.");
 			msgArray.push("If you just want a public #nsfw text channel, just use `!setnsfw on` in that text channel.");
 			msgArray.push("");
@@ -1789,7 +1833,7 @@ Commands.addbgo = {
 	}
 };
 
-Commands.del2dnsfw = {
+Commands.delnsfw = {
 	name: "del2dnsfw",
 	level: 0,
 	fn: function(bot, msg, suffix, user) {
@@ -1805,19 +1849,19 @@ Commands.del2dnsfw = {
 				return;
 			}
 			user = msg.author.id;
-			role = msg.channel.server.roles.get("name", "Channel Role - 2D NSFW");
+			role = msg.channel.server.roles.get("name", "Channel Role - NSFW");
 			if (role) {
 				bot.removeMemberFromRole(user, role, (e) => {
 					if (e) {
-						bot.sendMessage(msg.channel, "Error removing " + user + " from `Channel Role - 2D NSFW`!` " + e + "`");
+						bot.sendMessage(msg.channel, "Error removing " + user + " from `Channel Role - NSFW`!` " + e + "`");
 					}
 					else {
-						bot.sendMessage(msg.channel, "Successfully removed <@" + user + "> from `Channel Role - 2D NSFW`!");
+						bot.sendMessage(msg.channel, "Successfully removed <@" + user + "> from `Channel Role - NSFW`!");
 					}
 				});
 			}
 			else {
-				bot.sendMessage(msg, "The `Channel Role - 2D NSFW` role doesn't exist!");
+				bot.sendMessage(msg, "The `Channel Role - NSFW` role doesn't exist!");
 			}
 			return;
 		}
@@ -1825,84 +1869,22 @@ Commands.del2dnsfw = {
 			bot.sendMessage(msg.channel, "You must mention the users you want to add the NSFW to!");
 			return;
 		}
-		role = msg.channel.server.roles.get("name", "Channel Role - 2D NSFW");
+		role = msg.channel.server.roles.get("name", "Channel Role - NSFW");
 		if (role) {
 			msg.mentions.map((user) => {
 				bot.removeMemberFromRole(user, role, (e) => {
 					if (e) {
-						bot.sendMessage(msg, "Error removing " + user + " from `Channel Role - 2D NSFW`!` " + e + "`");
+						bot.sendMessage(msg, "Error removing " + user + " from `Channel Role - NSFW`!` " + e + "`");
 					}
 					else {
-						bot.sendMessage(msg, "Successfully removed " + user + " from `Channel Role - 2D NSFW`!");
+						bot.sendMessage(msg, "Successfully removed " + user + " from `Channel Role - NSFW`!");
 					}
 				});
 			});
 		}
 		else {
 			var msgArray = [];
-			msgArray.push("The role `Channel Role - 2D NSFW` doesn't exist!");
-			msgArray.push("This command doesn't do anything if it doesn't exist.");
-			msgArray.push("If you just want a public #nsfw text channel, just use `!setnsfw on` in that text channel.");
-			msgArray.push("");
-			msgArray.push("Create this role and then give it the permission to `Read Messages` in a text channel. http://i.imgur.com/LpzIr7b.png");
-			msgArray.push("Remember to remove the permission `Read Messages` from everyone so they can't the text channel!! http://i.imgur.com/i0dzFoU.png");
-			bot.sendMessage(msg.author, msgArray);
-		}
-	}
-};
-
-Commands.del3dnsfw = {
-	name: "del3dnsfw",
-	level: 0,
-	fn: function(bot, msg, suffix, user) {
-		var role;
-		if (msg.channel.isPrivate) return;
-		if (!msg.channel.permissionsOf(bot.user).hasPermission("manageRoles")) {
-			bot.sendMessage(msg, "I don't have the permission `Manage Roles`! I must have this permission for `!delnsfw` to function correctly!");
-			return;
-		}
-		if (!msg.channel.permissionsOf(msg.author).hasPermission("manageRoles")) {
-			if (msg.mentions.length > 0) {
-				bot.sendMessage(msg.channel, "You mentioned another user. Since you don't have the permission to edit roles, you can't change other users roles!");
-				return;
-			}
-			user = msg.author.id;
-			role = msg.channel.server.roles.get("name", "Channel Role - 3D NSFW");
-			if (role) {
-				bot.removeMemberFromRole(user, role, (e) => {
-					if (e) {
-						bot.sendMessage(msg.channel, "Error removing " + user + " from `Channel Role - 3D NSFW`!` " + e + "`");
-					}
-					else {
-						bot.sendMessage(msg.channel, "Successfully removed <@" + user + "> from `Channel Role - 3D NSFW`!");
-					}
-				});
-			}
-			else {
-				bot.sendMessage(msg, "The `Channel Role - 3D NSFW` role doesn't exist!");
-			}
-			return;
-		}
-		if (msg.mentions.length < 1) {
-			bot.sendMessage(msg.channel, "You must mention the users you want to add the NSFW to!");
-			return;
-		}
-		role = msg.channel.server.roles.get("name", "Channel Role - 3D NSFW");
-		if (role) {
-			msg.mentions.map((user) => {
-				bot.removeMemberFromRole(user, role, (e) => {
-					if (e) {
-						bot.sendMessage(msg, "Error removing " + user + " from `Channel Role - 3D NSFW`!` " + e + "`");
-					}
-					else {
-						bot.sendMessage(msg, "Successfully removed " + user + " from `Channel Role - 3D NSFW`!");
-					}
-				});
-			});
-		}
-		else {
-			var msgArray = [];
-			msgArray.push("The role `Channel Role - 3D NSFW` doesn't exist!");
+			msgArray.push("The role `Channel Role - NSFW` doesn't exist!");
 			msgArray.push("This command doesn't do anything if it doesn't exist.");
 			msgArray.push("If you just want a public #nsfw text channel, just use `!setnsfw on` in that text channel.");
 			msgArray.push("");
@@ -2095,13 +2077,11 @@ Commands.coloruser = {
 
 function removerole(user, r, suffix, bot, msg) {
 	if (r.name.indexOf("CColour") > -1 && r.name != "CColour - " + suffix.replace(/(.*) #?/, "").toLowerCase()) {
-		//console.log("hi"); 
 		bot.removeMemberFromRole(user, r, (e) => {
 			if (e) {
 				bot.sendMessage(msg.channel, "error: " + e);
 			}
 			else {
-				//bot.sendMessage(msg.channel, "Deleted role: "+r.name);
 			}
 		});
 		bot.removeMemberFromRole(user, r, (e) => {
@@ -2109,7 +2089,6 @@ function removerole(user, r, suffix, bot, msg) {
 				bot.sendMessage(msg.channel, "error: " + e);
 			}
 			else {
-				//bot.sendMessage(msg.channel, "Deleted role: "+r.name);
 			}
 		});
 		bot.removeMemberFromRole(user, r, (e) => {
@@ -2117,7 +2096,6 @@ function removerole(user, r, suffix, bot, msg) {
 				bot.sendMessage(msg.channel, "error: " + e);
 			}
 			else {
-				//bot.sendMessage(msg.channel, "Deleted role: "+r.name);
 			}
 		});
 		bot.removeMemberFromRole(user, r, (e) => {
@@ -2125,15 +2103,12 @@ function removerole(user, r, suffix, bot, msg) {
 				bot.sendMessage(msg.channel, "error: " + e);
 			}
 			else {
-				//bot.sendMessage(msg.channel, "Deleted role: "+r.name);
 			}
 		});
 		bot.removeMemberFromRole(user, r, (e) => {
 			if (e) {
-				//bot.sendMessage(msg.channel, "error: "+e);
 			}
 			else {
-				//bot.sendMessage(msg.channel, "Deleted role: "+r.name);
 			}
 		});
 	}
@@ -2203,7 +2178,6 @@ Commands.delrole = {
 				sp[k] = (j & 1) ? sp[k].toUpperCase() : sp[k].toLowerCase();
 			}
 			var st = sp.join("");
-			//console.log(st);
 			role = msg.channel.server.roles.get("name", st);
 			if (role) {
 				role = msg.channel.server.roles.get("name", st);
@@ -2268,7 +2242,6 @@ Commands.addrole = {
 					sp[k] = (j & 1) ? sp[k].toUpperCase() : sp[k].toLowerCase();
 				}
 				var st = sp.join("");
-				//console.log(st);
 				role = msg.channel.server.roles.get("name", st);
 				if (role) {
 					role = msg.channel.server.roles.get("name", st);
@@ -2359,6 +2332,170 @@ Commands.removerole = {
 				}
 			});
 		});
+	}
+};
+
+Commands.animebeta = {
+	name: "animebeta",
+	usage: "<wtf is this>",
+	level: 0,
+	fn: function(bot, msg, suffix) {
+		unirest.post("https://anilist.co/api/auth/access_token")
+			.header("accept", "application/json")
+			.send({ "grant_type": "client_credentials", "client_id": ConfigFile.anilist.id, "client_secret": ConfigFile.anilist.secret})
+			.end(function (response) {
+				var accesstoken = response.body.access_token
+				console.log(accesstoken)
+				unirest.get("https://anilist.co/api/anime/search/"+suffix)
+					.headers({ Authorization: accesstoken })
+					.end(function (response) {
+						//console.log(response.body);
+						var array = [];
+						unirest.get("https://anilist.co/api/anime/"+response.body[0].id)
+							.headers({ Authorization: accesstoken })
+							.end(function (response1) {
+								var startmonth;
+								var startday;
+								var endmonth;
+								var endday;
+								switch (response1.body.start_date.substring(5,7)) {
+									case "01":
+										startmonth = "January"
+										break;
+									case "02":
+										startmonth = "February"
+										break;
+									case "03":
+										startmonth = "March"
+										break
+									case "04":
+										startmonth = "April"
+										break
+									case "05":
+										startmonth = "May"
+										break
+									case "06":
+										startmonth = "June"
+										break
+									case "07":
+										startmonth = "July"
+										break
+									case "08":
+										startmonth = "August"
+										break
+									case "09":
+										startmonth = "September"
+										break
+									case "10":
+										startmonth = "October"
+										break
+									case "11":
+										startmonth = "November"
+										break
+									case "12":
+										startmonth = "December"
+										break
+								}
+								switch (response1.body.start_date.substring(8,10)) {
+									case "01":
+									case "21":
+									case "31":
+										startday = response1.body.start_date.substring(8,10) + "st"
+										break;
+									case "02":
+									case "22":
+										startday = response1.body.start_date.substring(8,10) + "nd"
+										break;
+									case "03":
+									case "23":
+										startday = response1.body.start_date.substring(8,10) + "rd"
+										break;
+									default:
+										startday = response1.body.start_date.substring(8,10) + "th"
+								}
+								if (response1.body.end_date !== null) {
+									switch (response1.body.end_date.substring(5,7)) {
+										case "01":
+											endmonth = "January"
+											break;
+										case "02":
+											endmonth = "February"
+											break;
+										case "03":
+											endmonth = "March"
+											break
+										case "04":
+											endmonth = "April"
+											break
+										case "05":
+											endmonth = "May"
+											break
+										case "06":
+											endmonth = "June"
+											break
+										case "07":
+											endmonth = "July"
+											break
+										case "08":
+											endmonth = "August"
+											break
+										case "09":
+											endmonth = "September"
+											break
+										case "10":
+											endmonth = "October"
+											break
+										case "11":
+											endmonth = "November"
+											break
+										case "12":
+											endmonth = "December"
+											break
+									}
+									switch (response1.body.end_date.substring(8,10)) {
+										case "01":
+										case "21":
+										case "31":
+											endday = response1.body.end_date.substring(8,10) + "st"
+											break;
+										case "02":
+										case "22":
+											endday = response1.body.end_date.substring(8,10) + "nd"
+											break;
+										case "03":
+										case "23":
+											endday = response1.body.end_date.substring(8,10) + "rd"
+											break;
+										default:
+											endday = response1.body.end_date.substring(8,10) + "th"
+									}
+									if (endday.substring(0,1) === "0") {
+										endday = endday.substring(1)
+									}
+									var endedairing = endmonth + " " + endday + ", " + response1.body.end_date.substring(0,4)
+								}
+								if (startday.substring(0,1) === "0") {
+									startday = startday.substring(1)
+								}
+								var startedairing = startmonth + " " + startday + ", " + response1.body.start_date.substring(0,4)
+								if (startedairing && !endedairing) {
+									endedairing = "Still Airing"
+								}
+								console.log(startmonth + startday)
+								array.push(response1.body.title_japanese + " / " + response1.body.title_romaji + " / " + response1.body.title_english)
+								array.push(" ")
+								array.push("**Episodes**: " + response1.body.total_episodes + " | **User Ratings**: " + response1.body.average_score + "/100 | **Started Airing**: " + startedairing + " | **Finished Airing**: " + endedairing)
+								array.push("**Genres**: " + response1.body.genres.join(", "))
+								array.push(" ")
+								array.push("**Description**: " + response1.body.description)
+								array.push(" ")
+								setTimeout(function() {
+									bot.sendMessage(msg.channel, array)
+								}, 1000);
+								bot.sendFile(msg.channel, response1.body.image_url_lge);
+							})
+					});
+			});
 	}
 };
 
@@ -2522,6 +2659,10 @@ Commands.osu = {
 	level: 0,
 	usage: "<sig/user/best/recent> [username] [hex color for sig]",
 	fn: function(bot, msg, suffix, user) {
+		//if (msg.author.id != "98621941119750144") {
+		//	bot.sendMessage(msg.channel, "This command is currently **unavailable.**")
+		//	return;
+		//}
 		var username;
 		Permissions.GetOsu(msg, function(err, reply) {
 			if (err) {
@@ -2627,10 +2768,10 @@ Commands.osu = {
 							var msgArray = [];
 							msgArray.push("osu stats for: **" + data.username + "**:");
 							msgArray.push("----------------------------------");
-							msgArray.push("**Profile Link**: http://osu.ppy.sh/u/" + data.user_id);
-							msgArray.push("**Play Count**: " + data.playcount.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Ranked Score**: " + data.ranked_score.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Total Score**: " + data.total_score.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Level**: " + data.level.substring(0, data.level.split(".")[0].length + 3));
-							msgArray.push("**PP**: " + data.pp_raw.split(".")[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Rank**: #" + data.pp_rank.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Country Rank**: #" + data.pp_country_rank.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Accuracy**: " + data.accuracy.substring(0, data.accuracy.split(".")[0].length + 3) + "%");
-							msgArray.push("**300**: " + data.count300.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **100**: " + data.count100.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **50**: " + data.count50.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **SS**: " + data.count_rank_ss + " | **S**: " + data.count_rank_s + " | **A**: " + data.count_rank_a.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Total Hits**: " + eee.replace(/\B(?=(\d{3})+(?!\d))/g, ","));
+							msgArray.push("**Profile Link**: <http://osu.ppy.sh/u/" + data.user_id + ">");
+							msgArray.push("**Play Count**: " + data.playcount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Ranked Score**: " + data.ranked_score.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Total Score**: " + data.total_score.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Level**: " + data.level.toString().substring(0, data.level.toString().split(".")[0].length + 3));
+							msgArray.push("**PP**: " + data.pp_raw.toString().split(".")[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Rank**: #" + data.pp_rank.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Country Rank**: #" + data.pp_country_rank.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Accuracy**: " + data.accuracy.toString().substring(0, data.accuracy.toString().split(".")[0].length + 3) + "%");
+							msgArray.push("**300**: " + data.count300.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **100**: " + data.count100.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **50**: " + data.count50.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **SS**: " + data.count_rank_ss + " | **S**: " + data.count_rank_s + " | **A**: " + data.count_rank_a.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Total Hits**: " + eee.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","));
 							msgArray.push("");
 							bot.sendMessage(msg, msgArray);
 							bot.sendFile(msg.channel, 'http://a.ppy.sh/' + avatar + '_1.png');
@@ -2677,11 +2818,11 @@ Commands.osu = {
 						try {
 							var msgArray = [];
 							msgArray.push("osu!mania stats for: **" + data.username + "**:");
-							msgArray.push("**Profile Link**: http://osu.ppy.sh/u/" + data.user_id);
+							msgArray.push("**Profile Link**: <http://osu.ppy.sh/u/" + data.user_id + ">");
 							msgArray.push("----------------------------------");
-							msgArray.push("**Play Count**: " + data.playcount.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Ranked Score**: " + data.ranked_score.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Total Score**: " + data.total_score.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Level**: " + data.level.substring(0, data.level.split(".")[0].length + 3));
-							msgArray.push("**PP**: " + data.pp_raw.split(".")[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Rank**: #" + data.pp_rank.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Country Rank**: #" + data.pp_country_rank.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Accuracy**: " + data.accuracy.substring(0, data.accuracy.split(".")[0].length + 3) + "%");
-							msgArray.push("**300**: " + data.count300.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **100**: " + data.count100.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **50**: " + data.count50.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **SS**: " + data.count_rank_ss + " | **S**: " + data.count_rank_s + " | **A**: " + data.count_rank_a.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Total Hits**: " + eee.replace(/\B(?=(\d{3})+(?!\d))/g, ","));
+							msgArray.push("**Play Count**: " + data.playcount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Ranked Score**: " + data.ranked_score.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Total Score**: " + data.total_score.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Level**: " + data.level.toString().substring(0, data.level.toString().split(".")[0].length + 3));
+							msgArray.push("**PP**: " + data.pp_raw.toString().split(".")[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Rank**: #" + data.pp_rank.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Country Rank**: #" + data.pp_country_rank.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Accuracy**: " + data.accuracy.toString().substring(0, data.accuracy.toString().split(".")[0].length + 3) + "%");
+							msgArray.push("**300**: " + data.count300.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **100**: " + data.count100.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **50**: " + data.count50.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **SS**: " + data.count_rank_ss + " | **S**: " + data.count_rank_s + " | **A**: " + data.count_rank_a.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Total Hits**: " + eee.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","));
 							msgArray.push("");
 							bot.sendMessage(msg, msgArray);
 							bot.sendFile(msg.channel, 'http://a.ppy.sh/' + avatar + '_1.png');
@@ -2729,10 +2870,10 @@ Commands.osu = {
 							var msgArray = [];
 							msgArray.push("Taiko stats for: **" + data.username + "**:");
 							msgArray.push("----------------------------------");
-							msgArray.push("**Profile Link**: http://osu.ppy.sh/u/" + data.user_id);
-							msgArray.push("**Play Count**: " + data.playcount.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Ranked Score**: " + data.ranked_score.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Total Score**: " + data.total_score.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Level**: " + data.level.substring(0, data.level.split(".")[0].length + 3));
-							msgArray.push("**PP**: " + data.pp_raw.split(".")[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Rank**: #" + data.pp_rank.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Country Rank**: #" + data.pp_country_rank.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Accuracy**: " + data.accuracy.substring(0, data.accuracy.split(".")[0].length + 3) + "%");
-							msgArray.push("**300**: " + data.count300.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **100**: " + data.count100.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **SS**: " + data.count_rank_ss + " | **S**: " + data.count_rank_s + " | **A**: " + data.count_rank_a.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Total Hits**: " + eee.replace(/\B(?=(\d{3})+(?!\d))/g, ","));
+							msgArray.push("**Profile Link**: <http://osu.ppy.sh/u/" + data.user_id + ">");
+							msgArray.push("**Play Count**: " + data.playcount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Ranked Score**: " + data.ranked_score.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Total Score**: " + data.total_score.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Level**: " + data.level.toString().substring(0, data.level.toString().split(".")[0].length + 3));
+							msgArray.push("**PP**: " + data.pp_raw.toString().split(".")[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Rank**: #" + data.pp_rank.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Country Rank**: #" + data.pp_country_rank.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Accuracy**: " + data.accuracy.toString().substring(0, data.accuracy.toString().split(".")[0].length + 3) + "%");
+							msgArray.push("**300**: " + data.count300.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **100**: " + data.count100.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **SS**: " + data.count_rank_ss + " | **S**: " + data.count_rank_s + " | **A**: " + data.count_rank_a.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Total Hits**: " + eee.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","));
 							msgArray.push("");
 							bot.sendMessage(msg, msgArray);
 							bot.sendFile(msg.channel, 'http://a.ppy.sh/' + avatar + '_1.png');
@@ -2780,10 +2921,10 @@ Commands.osu = {
 							var msgArray = [];
 							msgArray.push("CtB stats for: **" + data.username + "**:");
 							msgArray.push("----------------------------------");
-							msgArray.push("**Profile Link**: http://osu.ppy.sh/u/" + data.user_id);
-							msgArray.push("**Play Count**: " + data.playcount.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Ranked Score**: " + data.ranked_score.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Total Score**: " + data.total_score.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Level**: " + data.level.substring(0, data.level.split(".")[0].length + 3));
-							msgArray.push("**PP**: " + data.pp_raw.split(".")[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Rank**: #" + data.pp_rank.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Country Rank**: #" + data.pp_country_rank.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Accuracy**: " + data.accuracy.substring(0, data.accuracy.split(".")[0].length + 3) + "%");
-							msgArray.push("**300**: " + data.count300.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **100**: " + data.count100.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **50**: " + data.count50.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **SS**: " + data.count_rank_ss + " | **S**: " + data.count_rank_s + " | **A**: " + data.count_rank_a.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Total Hits**: " + eee.replace(/\B(?=(\d{3})+(?!\d))/g, ","));
+							msgArray.push("**Profile Link**: <http://osu.ppy.sh/u/" + data.user_id + ">");
+							msgArray.push("**Play Count**: " + data.playcount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Ranked Score**: " + data.ranked_score.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Total Score**: " + data.total_score.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Level**: " + data.level.toString().substring(0, data.level.toString().split(".")[0].length + 3));
+							msgArray.push("**PP**: " + data.pp_raw.toString().split(".")[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Rank**: #" + data.pp_rank.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Country Rank**: #" + data.pp_country_rank.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Accuracy**: " + data.accuracy.toString().substring(0, data.accuracy.toString().split(".")[0].length + 3) + "%");
+							msgArray.push("**300**: " + data.count300.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **100**: " + data.count100.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **50**: " + data.count50.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **SS**: " + data.count_rank_ss + " | **S**: " + data.count_rank_s + " | **A**: " + data.count_rank_a.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " | **Total Hits**: " + eee.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","));
 							msgArray.push("");
 							bot.sendMessage(msg, msgArray);
 							bot.sendFile(msg.channel, 'http://a.ppy.sh/' + avatar + '_1.png');
@@ -3252,37 +3393,37 @@ Commands.manga = {
 		}
 	},
 
-	Commands.e621 = {
-		name: "e621",
-		help: "e621, the defenition of *Stop taking the Internet so seriously.*",
-		usage: "<tags> multi-word tags need to be typed like: wildbeast_is_a_discord_bot",
-		level: 3,
-		nsfw: true,
-		fn: function(bot, msg, suffix) {
-			bot.startTyping(msg.channel);
-			unirest.post("https://e621.net/post/index.json?limit=500&tags=" + suffix) // 
-				.end(function(result) {
-					if (result.body.length < 1) {
-						bot.sendMessage(msg.channel, "Sorry, nothing found.");
-						bot.stopTyping(msg.channel);
-						return;
-					}
-					else {
-						var count = Math.floor((Math.random() * result.body.length));
-						var count1 = Math.floor((Math.random() * result.body.length));
-						var count2 = Math.floor((Math.random() * result.body.length));
-						var e621 = result.body[count].file_url;
-						var e6212 = result.body[count1].file_url;
-						var e6213 = result.body[count2].file_url;
-						bot.sendMessage(msg.channel, "You've searched for `" + suffix + "`");
-						bot.sendFile(msg.channel, e621);
-						bot.sendFile(msg.channel, e6212);
-						bot.sendFile(msg.channel, e6213);
-						bot.stopTyping(msg.channel);
-					}
-				});
-		}
-	};
+Commands.e621 = {
+	name: "e621",
+	help: "e621, the defenition of *Stop taking the Internet so seriously.*",
+	usage: "<tags> multi-word tags need to be typed like: wildbeast_is_a_discord_bot",
+	level: 3,
+	nsfw: true,
+	fn: function(bot, msg, suffix) {
+		bot.startTyping(msg.channel);
+		unirest.post("https://e621.net/post/index.json?limit=500&tags=" + suffix) // 
+			.end(function(result) {
+				if (result.body.length < 1) {
+					bot.sendMessage(msg.channel, "Sorry, nothing found.");
+					bot.stopTyping(msg.channel);
+					return;
+				}
+				else {
+					var count = Math.floor((Math.random() * result.body.length));
+					var count1 = Math.floor((Math.random() * result.body.length));
+					var count2 = Math.floor((Math.random() * result.body.length));
+					var e621 = result.body[count].file_url;
+					var e6212 = result.body[count1].file_url;
+					var e6213 = result.body[count2].file_url;
+					bot.sendMessage(msg.channel, "You've searched for `" + suffix + "`");
+					bot.sendFile(msg.channel, e621);
+					bot.sendFile(msg.channel, e6212);
+					bot.sendFile(msg.channel, e6213);
+					bot.stopTyping(msg.channel);
+				}
+			});
+	}
+};
 
 Commands.eval = {
 	name: "eval",
@@ -3384,29 +3525,6 @@ Commands.restart = {
 		setTimeout(function() {
 			process.exit(0);
 		}, 3000);
-	}
-};
-
-Commands.copy = {
-	name: "copy",
-	level: 3,
-	fn: function(bot, msg) {
-		bot.awaitResponse(msg, "What would you like me to say?", {}, function(error, message) {
-			if (error) {
-				bot.sendMessage(msg.channel, error);
-				return;
-			}
-			console.log(message);
-			bot.getChannelLogs(msg.channel, 100, function(error, messages) {
-				for (var i = 0; i < 100; i++) {
-					if (messages[i].author.id == msg.author.id) {
-						var response = messages[i].cleanContent.replace(/@everyone/gi, " ").replace(/@here/gi, " ");
-						break;
-					}
-				}
-				bot.sendMessage(msg.channel, response);
-			});
-		});
 	}
 };
 
@@ -3913,15 +4031,15 @@ Commands.setignore = {
 	level: 3,
 	fn: function(bot, msg, suffix) {
 		if (!msg.channel.server) return;
-		if (suffix.toLowerCase().trim() === "yes" || suffix.toLowerCase().trim() === "no") {
+		if (suffix.toLowerCase().trim() === "on" || suffix.toLowerCase().trim() === "off") {
 			Permissions.SetIgnore(msg.channel, suffix, function(err, allow1) {
 				if (err) {
 					bot.reply(msg.channel, "I've failed to set Ignore flag!");
 				}
-				if (allow1 === "no") {
+				if (allow1 === "off") {
 					bot.sendMessage(msg.channel, "Commands are now allowed for " + msg.channel);
 				}
-				else if (allow1 === "yes") {
+				else if (allow1 === "on") {
 					bot.sendMessage(msg.channel, "Commands are now disallowed for " + msg.channel);
 				}
 				else {
@@ -3988,13 +4106,12 @@ Commands["server-info"] = {
 	}
 };
 
-/*Commands["join-server"] = {
+Commands["join-server"] = {
 	name: "join-server",
 	help: "I'll join the server you've requested me to join, as long as the invite is valid and I'm not banned of already in the requested server.",
 	usage: "<bot-username> <instant-invite>",
 	level: 0,
 	fn: function(bot, msg, suffix) {
-		return;
 		suffix = suffix.split(" ");
 		if (ConfigFile.discord.token_mode === true) {
 			var array = [];
@@ -4006,7 +4123,7 @@ Commands["server-info"] = {
 			return;
 		}
 	}
-};*/
+};
 
 Commands.botstatus = {
 	name: "botstatus",
@@ -4084,132 +4201,6 @@ Commands.konachan = {
 					bot.sendFile(msg.channel, kona);
 					bot.sendFile(msg.channel, kona1);
 					bot.sendFile(msg.channel, kona2);
-				}
-			});
-	}
-};
-
-Commands.lolibooru = {
-	name: "lolibooru",
-	help: "You're looking at it right now.",
-	level: 0,
-	nsfw: true,
-	fn: function(bot, msg, suffix) {
-		if (msg.channel.server.id === "137678884022910976") {
-			return;
-		}
-		console.log("hi");
-		unirest.post("https://lolibooru.moe/post/index.json?limit=500&tags=" + suffix)
-			.end(function(result) {
-				if (result.body.length < 1) {
-					bot.sendMessage(msg.channel, "Sorry, nothing found.");
-					return;
-				}
-				if (suffix.length < 1) {
-					suffix = "<no tags specified>";
-				}
-				var suffix1 = suffix.toString().toLowerCase();
-				if ((suffix1.indexOf("gaping") > -1 || suffix1.indexOf("gape") > -1) || suffix1.indexOf("prolapse") > -1 || suffix1.indexOf("toddlercon") > -1 || suffix1.indexOf("dog") > -1) {
-					var count = Math.floor((Math.random() * result.body.length));
-					var count1 = Math.floor((Math.random() * result.body.length));
-					var count2 = Math.floor((Math.random() * result.body.length));
-					var kona = result.body[count].file_url;
-					var kona1 = result.body[count1].file_url;
-					var kona2 = result.body[count2].file_url;
-					bot.sendMessage(msg.channel, "You've searched for ` " + suffix + " `. Sending images in a pm...");
-					bot.sendFile(msg.author, kona);
-					bot.sendFile(msg.author, kona1);
-					bot.sendFile(msg.author, kona2);
-				}
-				else {
-					var count = Math.floor((Math.random() * result.body.length));
-					var count1 = Math.floor((Math.random() * result.body.length));
-					var count2 = Math.floor((Math.random() * result.body.length));
-					var lolibooru = result.body[count].file_url;
-					var lolibooru1 = result.body[count1].file_url;
-					var lolibooru2 = result.body[count2].file_url;
-					if (result.body.length <= 2) {
-						bot.sendMessage(msg.channel, "There were less than 3 results for `" + suffix + "` :(");
-						if (result.body.length === 1) {
-							lolibooru = result.body[0].file_url;
-							bot.sendFile(msg.channel, lolibooru);
-							return;
-						}
-						if (result.body.length === 2) {
-							lolibooru = result.body[0].file_url;
-							lolibooru1 = result.body[1].file_url;
-							bot.sendFile(msg.channel, lolibooru);
-							bot.sendFile(msg.channel, lolibooru1);
-							return;
-						}
-					}
-					bot.sendMessage(msg.channel, "You've searched for `" + suffix + "` . There are `" + result.body.length + "` results that contain those tags.\nSending `3` random images of those `" + result.body.length + "` results.");
-					bot.sendFile(msg.channel, lolibooru);
-					bot.sendFile(msg.channel, lolibooru1);
-					bot.sendFile(msg.channel, lolibooru2);
-				}
-			});
-	}
-};
-
-Commands.loli = {
-	name: "loli",
-	help: "You're looking at it right now.",
-	level: 0,
-	nsfw: true,
-	fn: function(bot, msg, suffix) {
-		if (msg.channel.server.id === "137678884022910976") {
-			return;
-		}
-		console.log("hi");
-		unirest.post("https://lolibooru.moe/post/index.json?limit=500&tags=" + suffix)
-			.end(function(result) {
-				if (result.body.length < 1) {
-					bot.sendMessage(msg.channel, "Sorry, nothing found.");
-					return;
-				}
-				if (suffix.length < 1) {
-					suffix = "<no tags specified>";
-				}
-				var suffix1 = suffix.toString().toLowerCase();
-				if ((suffix1.indexOf("gaping") > -1 || suffix1.indexOf("gape") > -1) || suffix1.indexOf("prolapse") > -1 || suffix1.indexOf("toddlercon") > -1 || suffix1.indexOf("dog") > -1) {
-					var count = Math.floor((Math.random() * result.body.length));
-					var count1 = Math.floor((Math.random() * result.body.length));
-					var count2 = Math.floor((Math.random() * result.body.length));
-					var kona = result.body[count].file_url;
-					var kona1 = result.body[count1].file_url;
-					var kona2 = result.body[count2].file_url;
-					bot.sendMessage(msg.channel, "You've searched for ` " + suffix + " `. Sending images in a pm...");
-					bot.sendFile(msg.author, kona);
-					bot.sendFile(msg.author, kona1);
-					bot.sendFile(msg.author, kona2);
-				}
-				else {
-					var count = Math.floor((Math.random() * result.body.length));
-					var count1 = Math.floor((Math.random() * result.body.length));
-					var count2 = Math.floor((Math.random() * result.body.length));
-					var lolibooru = result.body[count].file_url;
-					var lolibooru1 = result.body[count1].file_url;
-					var lolibooru2 = result.body[count2].file_url;
-					if (result.body.length <= 2) {
-						bot.sendMessage(msg.channel, "There were less than 3 results for `" + suffix + "` :(");
-						if (result.body.length === 1) {
-							lolibooru = result.body[0].file_url;
-							bot.sendFile(msg.channel, lolibooru);
-							return;
-						}
-						if (result.body.length === 2) {
-							lolibooru = result.body[0].file_url;
-							lolibooru1 = result.body[1].file_url;
-							bot.sendFile(msg.channel, lolibooru);
-							bot.sendFile(msg.channel, lolibooru1);
-							return;
-						}
-					}
-					bot.sendMessage(msg.channel, "You've searched for `" + suffix + "` . There are `" + result.body.length + "` results that contain those tags.\nSending `3` random images of those `" + result.body.length + "` results.");
-					bot.sendFile(msg.channel, lolibooru);
-					bot.sendFile(msg.channel, lolibooru1);
-					bot.sendFile(msg.channel, lolibooru2);
 				}
 			});
 	}

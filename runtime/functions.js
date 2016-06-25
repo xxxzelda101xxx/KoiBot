@@ -1,75 +1,88 @@
 exports.newMember = function(bot, server, user) {
 	for (var i = 0; i < server.channels.length; i++) {
 		if (server.channels[i] != undefined) {
-			Permissions.GetAnnounce(server.channels[i].id, function(err, reply) {
-				if (reply === "on") {
-					Permissions.GetAnnounceJoinMessage(server.id, function(err, reply) {
-						if (reply === "none") {
-							bot.sendMessage(server.channels[i], user+" has joined!")
-						}
-						else {
-							if (reply.indexOf("%user%") > -1) {
-								reply = reply.replace("%user%", `${user}`)
-							}
-							if (reply.indexOf("%server%") > -1 ) {
-								reply = reply.replace("%server%", `${server.name}`)
-							}
-							bot.sendMessage(server.channels[i], reply);
-						}
-					})
-				}	
-			})
+			joinmessage(bot, server, user, server.channels[i])
 		}
 	}
+}
+
+function joinmessage(bot, server, user, currentChannel) {
+	Permissions.GetAnnounce(currentChannel.id, function(err, reply) {
+		if (reply === "on") {
+			Permissions.GetAnnounceJoinMessage(server.id, function(err, reply) {
+				if (reply === "none") {
+					bot.sendMessage(currentChannel, user+" has joined!")
+				}
+				else {
+					if (reply.indexOf("%user%") > -1) {
+						reply = reply.replace("%user%", `${user}`)
+					}
+					if (reply.indexOf("%server%") > -1 ) {
+						reply = reply.replace("%server%", `${server.name}`)
+					}
+					bot.sendMessage(currentChannel, reply);
+				}
+			})
+		}	
+	})
 }
 
 exports.ripMember = function(bot, server, user) {
 	for (var i = 0; i < server.channels.length; i++) {
 		if (server.channels[i] != undefined) {
-			Permissions.GetAnnounce(server.channels[i].id, function(err, reply) {
-				if (reply === "on") {
-					Permissions.GetAnnounceLeaveMessage(server.id, function(err, reply) {
-						if (reply === "none") {
-							bot.sendMessage(server.channels[i], user+" has left!")
-						}
-						else {
-							if (reply.indexOf("%user%") > -1) {
-								reply = reply.replace("%user%", `${user}`)
-							}
-							if (reply.indexOf("%server%") > -1 ) {
-								reply = reply.replace("%server%", `${server.name}`)
-							}
-							bot.sendMessage(server.channels[i], reply);
-						}
-					})
-				}	
-			})
+			leavemessage(bot, server, user, server.channels[i])
 		}
 	}
+}
+
+function leavemessage(bot, server, user, currentChannel) {
+	Permissions.GetAnnounce(currentChannel.id, function(err, reply) {
+		if (reply === "on") {
+			Permissions.GetAnnounceLeaveMessage(server.id, function(err, reply) {
+				if (reply === "none") {
+					bot.sendMessage(currentChannel, user+" has left!")
+				}
+				else {
+					if (reply.indexOf("%user%") > -1) {
+						reply = reply.replace("%user%", `${user}`)
+					}
+					if (reply.indexOf("%server%") > -1 ) {
+						reply = reply.replace("%server%", `${server.name}`)
+					}
+					bot.sendMessage(currentChannel, reply);
+				}
+			})
+		}	
+	})
 }
 
 exports.banMember = function(bot, server, user) {
 	for (var i = 0; i < server.channels.length; i++) {
 		if (server.channels[i] != undefined) {
-			Permissions.GetAnnounce(server.channels[i], function(err, reply) {
-				if (reply === "on") {
-					bot.sendMessage(server.channels[i], user+" has been banned!")
-				}
-			})
+			banmessage(bot, server, user, server.channels[i])
 		}
 	}
 }
-
+function banmessage(bot, server, user, currentChannel) {
+	Permissions.GetAnnounce(currentChannel.id, function(err, reply) {
+		if (reply === "on") {
+			bot.sendMessage(currentChannel, user+" has been banned!")
+		}
+	})
+}
 exports.unbanMember = function(bot, server, user) {
 	for (var i = 0; i < server.channels.length; i++) {
 		if (server.channels[i] != undefined) {
-			Permissions.GetAnnounce(server.channels[i], function(err, reply) {
-				if (reply === "on") {
-					bot.sendMessage(server.channels[i], user+" has been unbanned!")
-				}
-			})
+			unbanmessage(bot, server, user, server.channels[i])
 		}
 	}
+}
+function unbanmessage(bot, server, user, currentChannel) {
+	Permissions.GetAnnounce(currentChannel.id, function(err, reply) {
+		if (reply === "on") {
+			bot.sendMessage(currentChannel, user+" has been unbanned!")
+		}
+	})
 }
 
 exports.memberPresence = function(bot, oldUser, newUser) {
@@ -111,7 +124,7 @@ exports.pmMessages = function(bot, msg) {
 							array.push("You were mentioned in a message by "+msg.author+" in "+msg.channel+" while you were gone.")
 							for (var i = 0; i < messages.length; i++) {
 								if (messages[i].attachments.length > 0) {
-									if (messages[i].content) {
+									if (messages[i].content !== undefined || messages[i].content !== null) {
 										array.push(messages[i].author + ": " +messages.content + "  <" + messages[i].attachments[0].url + ">")
 									}
 									else {
@@ -165,7 +178,6 @@ exports.eventAnnounce = function(bot) {
 		for (var i = 0; i < events.items.length; i++) {
 			var d = new Date();
 			var miliseconds = d.getTime();
-			console.log(events.items[i].lastsent + (events.items[i].time * 60000) < miliseconds)
 			if (events.items[i].lastsent + (events.items[i].time * 60000) < miliseconds) {
 				for (var j = 0; j < events.items[i].channel.split(", ").length; j++) {
 					bot.sendMessage(events.items[i].channel.split(", ")[j], events.items[i].response)
@@ -180,42 +192,17 @@ exports.eventAnnounce = function(bot) {
 exports.startOsuTrack = function(bot) {
     setInterval (function () {
 		for (var i = 0; i < trackedchannels.items.length; i++) {
-			if (trackedchannels.items[i].mode === 0) {
-				if (trackedchannels.items[i].inactivity === 0) {
-					osutracking.osutrack(trackedchannels.items[i], bot)
-				}
-				else {
-					if (trackedchannels.items[i].inactivity < 10) {
-						inactivity(bot, trackedchannels.items[i])
-					}
+			if (trackedchannels.items[i].inactivity === 0) {
+				var currentInactive = 0
+				osutracking.osutrack(trackedchannels.items[i], bot, currentInactive)
+			}
+			else {
+				if (trackedchannels.items[i].inactivity < 10) {
+					inactivity(bot, trackedchannels.items[i])
 				}
 			}
 		}
-    }, 60000);
-}
-
-exports.startTaikoTrack = function(bot) {
-    setInterval (function () {
-        taikotracker.items.forEach( function (osu) {
-            osutracking.taikotrack(osu, bot);
-        });
-    }, 60000);
-}
-
-exports.startCtbTrack = function(bot) {
-    setInterval (function () {
-        ctbtracker.items.forEach( function (osu) {
-            osutracking.ctbtrack(osu, bot);
-        });
-    }, 60000);
-}
-
-exports.startManiaTrack = function(bot) {
-    setInterval (function () {
-        maniatracker.items.forEach( function (osu) {
-            osutracking.maniatrack(osu, bot);
-        });
-    }, 60000);
+    }, 5000);
 }
 
 exports.customSearch = function(msg, command, suffix) {
@@ -311,26 +298,34 @@ function punishDown (user, server, bot) {
 }
 
 function inactivity (bot, data) {
+	var currentInactive = data.inactivity
 	if (data.inactivity === 1) {
 		setTimeout(function() { 
-			osutracking.osutrack(data, bot); 
-		}, 60000);
+			osutracking.osutrack(data, bot, currentInactive); 
+		}, 180000);
 	}
 	else if (data.inactivity === 2) {
-		setTimeout(function() {
-			osutracking.osutrack(data, bot); 
-		}, 1200000);
+		setTimeout(function() { 
+			osutracking.osutrack(data, bot, currentInactive); 
+		}, 300000);
 	}
 	else if (data.inactivity === 3) {
-		setTimeout(function() { 
-			osutracking.osutrack(data, bot); 
-		}, 2400000);
+		setTimeout(function() {
+			osutracking.osutrack(data, bot, currentInactive); 
+		}, 1200000);
 	}
 	else if (data.inactivity === 4) {
 		setTimeout(function() { 
-			osutracking.osutrack(data, bot); 
+			osutracking.osutrack(data, bot, currentInactive); 
+		}, 2400000);
+	}
+	else if (data.inactivity === 5) {
+		setTimeout(function() { 
+			osutracking.osutrack(data, bot, currentInactive); 
 		}, 3600000);
 	}
-	data.inactivity = parseInt(data.inactivity + "" + 0)
+	if (data.inactivity <= 5) {
+		data.inactivity = data.inactivity * 10
+	}
 	require("fs").writeFile("./runtime/osutracking/db.json",JSON.stringify(trackedchannels, null, 4), null);
 }
