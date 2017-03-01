@@ -42,7 +42,6 @@ exports.startIRC = function(bot) {
           var totalHits = (parseInt(data2[0].count300) + parseInt(data2[0].count100) + parseInt(data2[0].count50) + parseInt(data2[0].countmiss))
           accuracy = (((totalPoints / totalHits) / 300) * 100).toFixed(2)
           osu.getBeatmap(maplink.replace("http://osu.ppy.sh/b/", "").slice(0,-4), function(err, mapdata) {
-            //console.log(mapdata)
             var minutesDrain = Math.floor(mapdata.hit_length / 60)
             var secondsDrain = mapdata.hit_length - minutesDrain * 60
             if (secondsDrain < 10) secondsDrain = `0${secondsDrain}`
@@ -155,13 +154,11 @@ exports.startIRC = function(bot) {
 
 function newQualifiedMap (qualifiedInfo, maplink, channel, hardestDiff, mapdata, totalDrain, totalLength) {
   var data = new Discord.RichEmbed(data);
-  //console.log(hardestDiff)
   data.setURL(`http://osu.ppy.sh/s/${maplink}`)
   data.setTitle(qualifiedInfo)
   data.setColor(16711935)
   data.addField(`Drain/Length`, `${totalDrain}/${totalLength}`, true)
   data.addField(`# of difficulties`, `${mapdata.length}`, true)
-  //data.addField(`​`, `-------------------------------------------------------------------`)
   data.addField(`Hardest Difficulty (${hardestDiff.difficultyrating.toString().match(/^-?\d+(?:\.\d{0,2})?/)[0]}*):`, `Max Combo: ${hardestDiff.max_combo}\nOD${hardestDiff.diff_overall}, CS${hardestDiff.diff_size}, AR${hardestDiff.diff_approach}, HP${hardestDiff.diff_drain}`, true)
   data.addField(`BPM`, hardestDiff.bpm, true)
   data.setThumbnail(`https://b.ppy.sh/thumb/${maplink}l.jpg`)
@@ -181,7 +178,6 @@ function newNumberOneMessage (channel, messcomp, accuracy, data2, mapdata, minut
   data.setURL(maplink)
   data.addField(`Accuracy`, `${accuracy}%`, true)
   data.addField(`Combo`, `${data2[0].maxcombo}/${mapdata.max_combo}`, true)
-  //console.log(data2[0].pp)
   if (data2[0].pp === null) {
     data.addField(`pp`, `0 (Qualified)`, true)
   }
@@ -202,7 +198,6 @@ function newNumberOneMessage (channel, messcomp, accuracy, data2, mapdata, minut
   else {
     data.addField(`Reddit Formatting`, `${data1.username} | ${mapdata.artist} - ${mapdata.title} ${redditMods} #1 | ${accuracy}% | ${data2[0].pp.toString().match(/^-?\d+(?:\.\d{0,2})?/)[0]}pp ${data2[0].maxcombo}/${mapdata.max_combo} combo`, false)
   }
-  //console.log(data2)
   data.setThumbnail(`https://a.ppy.sh/${data1.user_id}_1.png`)
   channel.sendEmbed(data)
 }
@@ -215,7 +210,6 @@ exports.startOsuTrack = function(bot, client, channels) {
             client.names(`${channel}`, function(err, names) {
               names.forEach(user => {
                 if (user.name === osu.username) {
-                  //console.log(`${user.name} is online!`)
                 }
               })
             })
@@ -288,7 +282,7 @@ exports.startTwitchPolling = function(bot) {
           if(stream.channels.length > 0 && stream.status != "offline?" && stream.status != "recheck") {
             pollTwitch(stream, bot);
           }
-          else if (stream.status === "offline?") {
+          else if (stream.status === "offline?" && stream.channels.length > 0) {
             twitchOffline(stream, bot)
           }
         });
@@ -380,17 +374,14 @@ function twitchOffline (stream, bot) {
     }
   }
   stream.channels.forEach(channel => {
-    console.log(channel)
     setTimeout(function() {
       request(options, function (error, response, data1) {
         if (!error && response.statusCode == 200) {
           var parsedData = JSON.parse(data1);
           if (!parsedData.stream) {
-            console.log(channel)
-            console.log(stream.info[stream.name][channel].msg_id)
+            if (!bot.channels.get(channel)) return;
             bot.channels.get(channel).fetchMessage(stream.info[stream.name][channel].msg_id)
             .then(message => {
-              console.log(message)
               var data = new Discord.RichEmbed(data);
               data.setTitle(`${stream.name} has finished streaming.`)
               data.setURL(`https://twitch.tv/${stream.name}`)
@@ -504,7 +495,6 @@ function changePerms(channame, data, user, type, i) {
       for (var j = 0; j < channame.permissionOverwrites.array().length; j++) {
         if ((channame.permissionOverwrites.array()[j].denyData == 2048 || channame.permissionOverwrites.array()[j].denyData == 0) && channame.permissionOverwrites.array()[j].allowData == 0) {
           channame.permissionOverwrites.array()[j].delete().then(overwrites => {
-            //console.log(overwrites)
           })
         }
       }
@@ -515,7 +505,6 @@ function changePerms(channame, data, user, type, i) {
       for (var j = 0; j < channame.permissionOverwrites.array().length; j++) {
         if ((channame.permissionOverwrites.array()[j].denyData == 2048 || channame.permissionOverwrites.array()[j].denyData == 0) && channame.permissionOverwrites.array()[j].allowData == 0) {
           channame.permissionOverwrites.array()[j].delete().then(overwrites => {
-            //console.log(overwrites)
           })
         }
       }
