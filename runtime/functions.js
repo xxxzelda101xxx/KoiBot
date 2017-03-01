@@ -293,7 +293,7 @@ exports.startTwitchPolling = function(bot) {
           }
         });
       })
-    }, 10000);
+    }, 60000);
 } //works
 
 function pollTwitch (stream, bot) {
