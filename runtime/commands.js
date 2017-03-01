@@ -2570,6 +2570,10 @@ Commands.twitchalert = {
 						else if (results[0].channels.indexOf(msg.channel.id) > -1) {
 							twitchdb.updateTwitchUser(twitchuser, msg.channel.id, "pull")
 							msg.channel.sendMessage(`I will no longer notify you when ${twitchuser} goes live in ${msg.channel}`);
+							if (results[0].channels.length === 1) {
+								twitchdb.updateStatus(twitchuser, false)
+								twitchdb.updateStats(twitchuser, {})
+							}
 						}
 						else if (results[0].channels.indexOf(msg.channel.id) < 0) {
 							twitchdb.updateTwitchUser(twitchuser, msg.channel.id, "push")
