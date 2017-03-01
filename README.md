@@ -1,6 +1,6 @@
 # Koi.
 
-## This bot is based off of WildBeast. This is my altered version. I am a complete noob and you shouldn't use this. :|
+## This is my bot, it's really bad and you shouldn't use it!
 
 #### Please check the wiki to see what commands Koi. has!
 

@@ -1,331 +1,461 @@
-exports.newMember = function(bot, server, user) {
-	for (var i = 0; i < server.channels.length; i++) {
-		if (server.channels[i] != undefined) {
-			joinmessage(bot, server, user, server.channels[i])
-		}
-	}
+var osudb = require("./osu_rt.js")
+var userdb = require("./userdb_rt.js")
+var twitchdb = require("./twitch_rt.js")
+var osutracking = require("./osutracker.js")
+var openrecdb = require("./openrec_rt.js")
+var request = require('request');
+var serverdb = require("./serverdb_rt.js")
+var permissions = require("./permissions.js")
+var osuapi = require('osu-api');
+var ConfigFile = require("../config.json");
+var osu = new osuapi.Api(ConfigFile.osu_api_key);
+var Discord = require("discord.js");
+const exec = require('child_process').exec;
+const path = require('path');
+
+exports.startIRC = function(bot) {
+  if (ConfigFile.osuname === "" && ConfigFile.osu_irc_password === "") {
+    return;
+  }
+  var irc = require('irc');
+  var client = new irc.Client('irc.ppy.sh', ConfigFile.osuname, {
+      channels: ['#announce'],
+      password: ConfigFile.osu_irc_password
+  });
+  client.on('message', (nick, to, text, message) => {
+    if (message.args[1].indexOf("achieved rank #1") > -1) {
+      channel = bot.channels.get("220811738965213185")
+      var messcomp = message.args[1].split(" ")
+      var url = messcomp[0].replace("[http://osu.ppy.sh/u/", "")
+      url = parseInt(url)
+      osu.getUser(url, function(err, data) {
+        userlength = data.username.split(" ").length
+        username = data.username
+        messcomp.splice(0, userlength + 1)
+        messcomp.unshift(username)
+        var maplink = messcomp[5].replace("[", "")
+        messcomp.splice(5,1)
+        messcomp.splice(messcomp.length - 1, 1)
+        messcomp[messcomp.length - 1] = messcomp[messcomp.length - 1].substring(0, messcomp[messcomp.length - 1].length - 1);
+        osu.getScoresRaw({ b: maplink.replace("http://osu.ppy.sh/b/", "").slice(0,-4), u: data.user_id, m: 0, type: "id"}, function(errorr, data2) {
+          var totalPoints = (parseInt(data2[0].count300) * 300) + (parseInt(data2[0].count100) * 100) + (parseInt(data2[0].count50) * 50) + (parseInt(data2[0].countmiss) * 0)
+          var totalHits = (parseInt(data2[0].count300) + parseInt(data2[0].count100) + parseInt(data2[0].count50) + parseInt(data2[0].countmiss))
+          accuracy = (((totalPoints / totalHits) / 300) * 100).toFixed(2)
+          osu.getBeatmap(maplink.replace("http://osu.ppy.sh/b/", "").slice(0,-4), function(err, mapdata) {
+            //console.log(mapdata)
+            var minutesDrain = Math.floor(mapdata.hit_length / 60)
+            var secondsDrain = mapdata.hit_length - minutesDrain * 60
+            if (secondsDrain < 10) secondsDrain = `0${secondsDrain}`
+            var minutesTotal = Math.floor(mapdata.total_length / 60)
+            var secondsTotal = mapdata.total_length - minutesTotal * 60
+            if (secondsTotal < 10) secondsTotal = `0${secondsTotal}`
+            var mods = parseInt(data2[0].enabled_mods, 10);
+            var returnString = "";
+            var ModsEnum = {
+              None: 0,
+              NoFail: 1,
+              Easy: 2,
+              //NoVideo      = 4,
+              Hidden: 8,
+              HardRock: 16,
+              SuddenDeath: 32,
+              DoubleTime: 64,
+              Relax: 128,
+              HalfTime: 256,
+              Nightcore: 512, // Only set along with DoubleTime. i.e: NC only gives 576
+              Flashlight: 1024,
+              Autoplay: 2048,
+              SpunOut: 4096,
+              Relax2: 8192,  // Autopilot?
+              Perfect: 16384,
+              Key4: 32768,
+              Key5: 65536,
+              Key6: 131072,
+              Key7: 262144,
+              Key8: 524288,
+              keyMod: 32768 | 65536 | 131072 | 262144 | 524288,
+              FadeIn: 1048576,
+              Random: 2097152,
+              LastMod: 4194304,
+              FreeModAllowed: 1 | 2 | 8 | 16 | 32 | 1024 | 1048576 | 16384 | 8192 | 4096 | (32768 | 65536 | 131072 | 262144 | 524288),
+              Key9: 16777216,
+              Key10: 33554432,
+              Key1: 67108864,
+              Key3: 134217728,
+              Key2: 268435456
+          	}
+            if ((mods & ModsEnum.Easy) == ModsEnum.Easy) returnString += "EZ";
+            if ((mods & ModsEnum.Hidden) == ModsEnum.Hidden) returnString += "HD";
+            if ((mods & ModsEnum.HardRock) == ModsEnum.HardRock) returnString += "HR";
+            if ((mods & ModsEnum.DoubleTime) == ModsEnum.DoubleTime) {
+                if ((mods & ModsEnum.Nightcore) == ModsEnum.Nightcore) returnString += "NC";
+                else returnString += "DT";
+            }
+            if ((mods & ModsEnum.Flashlight) == ModsEnum.Flashlight) returnString += "FL";
+            if ((mods & ModsEnum.HalfTime) == ModsEnum.HalfTime) returnString += "HT";
+            if ((mods & ModsEnum.NoFail) == ModsEnum.NoFail) returnString += "NF";
+            if ((mods & ModsEnum.Perfect) == ModsEnum.Perfect) returnString += "PF";
+            if ((mods & ModsEnum.SuddenDeath) == ModsEnum.SuddenDeath) returnString += "SD";
+            if ((mods & ModsEnum.SpunOut) == ModsEnum.SpunOut) returnString += "SpunOut ";
+            returnString = returnString.trim();
+          	if (returnString === "") {
+          		returnString = "None"
+          	}
+            if (returnString.indexOf("HR") > -1 || returnString.indexOf("DT") > -1 || returnString.indexOf("HT") > -1 || returnString.indexOf("EZ") > -1) {
+              oppaiDir = path.resolve(__dirname, "../oppai/oppai")
+              exec(`curl https://osu.ppy.sh/osu/${maplink.replace("http://osu.ppy.sh/b/", "").slice(0,-4)} | ${oppaiDir} - +${returnString}`, (error, stdout, stderr) => {
+                var stars = stdout.split("stars")
+                var starrating = stars[0].substr(stars[0].length - 7).trim()
+                mapdata.difficultyrating = starrating
+                newNumberOneMessage (channel, messcomp, accuracy, data2, mapdata, minutesDrain, secondsDrain, minutesTotal, secondsTotal, returnString, maplink, data)
+              });
+            }
+            else {
+              newNumberOneMessage (channel, messcomp, accuracy, data2, mapdata, minutesDrain, secondsDrain, minutesTotal, secondsTotal, returnString, maplink, data)
+            }
+          })
+        })
+      })
+    }
+    else if (message.args[1].indexOf("has just been qualified") > -1) {
+      channel = bot.channels.get("220811738965213185")
+      var messcomp = message.args[1].split(" ")
+      var maplink = messcomp[0].replace("[http://osu.ppy.sh/s/", "")
+      osu.getBeatmapSet(maplink, function(err, mapdata) {
+        var mapperid = message.args[1].match(/[[](http:\/\/osu\.ppy\.sh\/u\/[0-9]{0,})/g)
+        mapperid[0] = mapperid[0].replace("[http://osu.ppy.sh/u/", "")
+        osu.getUser(parseInt(mapperid[0]), function(err, data) {
+          var qualifiedInfo = `${mapdata[0].artist} - ${mapdata[0].title} by ${data.username} has just been qualified!`
+          var mapDiffs = []
+          for (var i = 0; i < mapdata.length; i++) {
+            mapDiffs.push(mapdata[i].difficultyrating)
+          }
+          var mapDiffs2 = mapDiffs
+          var hardestDiff = Math.max.apply(Math, mapDiffs)
+          for (var j = 0; j < mapdata.length; j++) {
+            if (mapdata[j].difficultyrating === hardestDiff.toString()) {
+              hardestDiff = mapdata[j]
+              break;
+            }
+          }
+          var minutesDrain = Math.floor(mapdata[0].hit_length / 60)
+          var secondsDrain = mapdata[0].hit_length - minutesDrain * 60
+          if (secondsDrain < 10) secondsDrain = `0${secondsDrain}`
+          var minutesTotal = Math.floor(mapdata[0].total_length / 60)
+          var secondsTotal = mapdata[0].total_length - minutesTotal * 60
+          if (secondsTotal < 10) secondsTotal = `0${secondsTotal}`
+          var totalDrain = `${minutesDrain}:${secondsDrain}`
+          var totalLength = `${minutesTotal}:${secondsTotal}`
+          newQualifiedMap (qualifiedInfo, maplink, channel, hardestDiff, mapdata, totalDrain, totalLength)
+        })
+      })
+    }
+  })
 }
 
-function joinmessage(bot, server, user, currentChannel) {
-	Permissions.GetAnnounce(currentChannel.id, function(err, reply) {
-		if (reply === "on") {
-			Permissions.GetAnnounceJoinMessage(server.id, function(err, reply) {
-				if (reply === "none") {
-					bot.sendMessage(currentChannel, user+" has joined!")
-				}
-				else {
-					if (reply.indexOf("%user%") > -1) {
-						reply = reply.replace("%user%", `${user}`)
-					}
-					if (reply.indexOf("%server%") > -1 ) {
-						reply = reply.replace("%server%", `${server.name}`)
-					}
-					bot.sendMessage(currentChannel, reply);
-				}
-			})
-		}	
-	})
+function newQualifiedMap (qualifiedInfo, maplink, channel, hardestDiff, mapdata, totalDrain, totalLength) {
+  var data = new Discord.RichEmbed(data);
+  //console.log(hardestDiff)
+  data.setURL(`http://osu.ppy.sh/s/${maplink}`)
+  data.setTitle(qualifiedInfo)
+  data.setColor(16711935)
+  data.addField(`Drain/Length`, `${totalDrain}/${totalLength}`, true)
+  data.addField(`# of difficulties`, `${mapdata.length}`, true)
+  //data.addField(`​`, `-------------------------------------------------------------------`)
+  data.addField(`Hardest Difficulty (${hardestDiff.difficultyrating.toString().match(/^-?\d+(?:\.\d{0,2})?/)[0]}*):`, `Max Combo: ${hardestDiff.max_combo}\nOD${hardestDiff.diff_overall}, CS${hardestDiff.diff_size}, AR${hardestDiff.diff_approach}, HP${hardestDiff.diff_drain}`, true)
+  data.addField(`BPM`, hardestDiff.bpm, true)
+  data.setThumbnail(`https://b.ppy.sh/thumb/${maplink}l.jpg`)
+  channel.sendEmbed(data)
 }
 
-exports.ripMember = function(bot, server, user) {
-	for (var i = 0; i < server.channels.length; i++) {
-		if (server.channels[i] != undefined) {
-			leavemessage(bot, server, user, server.channels[i])
-		}
-	}
+function newNumberOneMessage (channel, messcomp, accuracy, data2, mapdata, minutesDrain, secondsDrain, minutesTotal, secondsTotal, returnString, maplink, data1) {
+  if (returnString === "None") {
+    redditMods = "Nomod"
+  }
+  else {
+    redditMods = `+${returnString}`
+  }
+  var data = new Discord.RichEmbed(data);
+  data.setColor(16711935)
+  data.setTitle(messcomp.toString().replace(/,/g, " "))
+  data.setURL(maplink)
+  data.addField(`Accuracy`, `${accuracy}%`, true)
+  data.addField(`Combo`, `${data2[0].maxcombo}/${mapdata.max_combo}`, true)
+  //console.log(data2[0].pp)
+  if (data2[0].pp === null) {
+    data.addField(`pp`, `0 (Qualified)`, true)
+  }
+  else {
+    data.addField(`pp`, data2[0].pp.toString().match(/^-?\d+(?:\.\d{0,2})?/)[0], true)
+  }
+  if (mapdata.difficultyrating.toString().match(/^-?\d+(?:\.\d{0,2})?/) != null) {
+    data.addField(`Star Rating`, mapdata.difficultyrating.toString().match(/^-?\d+(?:\.\d{0,2})?/)[0], true)
+  }
+  else {
+    data.addField(`Star Rating`, `Null`, true)
+  }
+  data.addField(`Drain/Length`, `${minutesDrain}:${secondsDrain}/${minutesTotal}:${secondsTotal}`, true)
+  data.addField(`Mods`, returnString, true)
+  if (data2[0].pp === null) {
+    data.addField(`Reddit Formatting`, `${data1.username} | ${mapdata.artist} - ${mapdata.title} ${redditMods} #1 | ${accuracy}% | 0pp (Qualified) ${data2[0].maxcombo}/${mapdata.max_combo} combo`, false)
+  }
+  else {
+    data.addField(`Reddit Formatting`, `${data1.username} | ${mapdata.artist} - ${mapdata.title} ${redditMods} #1 | ${accuracy}% | ${data2[0].pp.toString().match(/^-?\d+(?:\.\d{0,2})?/)[0]}pp ${data2[0].maxcombo}/${mapdata.max_combo} combo`, false)
+  }
+  //console.log(data2)
+  data.setThumbnail(`https://a.ppy.sh/${data1.user_id}_1.png`)
+  channel.sendEmbed(data)
 }
 
-function leavemessage(bot, server, user, currentChannel) {
-	Permissions.GetAnnounce(currentChannel.id, function(err, reply) {
-		if (reply === "on") {
-			Permissions.GetAnnounceLeaveMessage(server.id, function(err, reply) {
-				if (reply === "none") {
-					bot.sendMessage(currentChannel, user+" has left!")
-				}
-				else {
-					if (reply.indexOf("%user%") > -1) {
-						reply = reply.replace("%user%", `${user}`)
-					}
-					if (reply.indexOf("%server%") > -1 ) {
-						reply = reply.replace("%server%", `${server.name}`)
-					}
-					bot.sendMessage(currentChannel, reply);
-				}
-			})
-		}	
-	})
-}
-
-exports.banMember = function(bot, server, user) {
-	for (var i = 0; i < server.channels.length; i++) {
-		if (server.channels[i] != undefined) {
-			banmessage(bot, server, user, server.channels[i])
-		}
-	}
-}
-function banmessage(bot, server, user, currentChannel) {
-	Permissions.GetAnnounce(currentChannel.id, function(err, reply) {
-		if (reply === "on") {
-			bot.sendMessage(currentChannel, user+" has been banned!")
-		}
-	})
-}
-exports.unbanMember = function(bot, server, user) {
-	for (var i = 0; i < server.channels.length; i++) {
-		if (server.channels[i] != undefined) {
-			unbanmessage(bot, server, user, server.channels[i])
-		}
-	}
-}
-function unbanmessage(bot, server, user, currentChannel) {
-	Permissions.GetAnnounce(currentChannel.id, function(err, reply) {
-		if (reply === "on") {
-			bot.sendMessage(currentChannel, user+" has been unbanned!")
-		}
-	})
-}
-
-exports.memberPresence = function(bot, oldUser, newUser) {
-	if (oldUser.username != newUser.username) {
-		var oldname = oldUser.username;
-		var testing = ", "+oldname+",";
-		Permissions.GetPreviousName(oldUser.id, function(err, reply) {
-			if (reply === "none") {
-				Permissions.SetPreviousName(oldUser.id, ", "+oldname+",", function(err, allow) {})
-			}
-			else {
-				if (reply.indexOf(testing) > -1) {
-					return;
-				}
-				if (reply.split(",").length - 1 === 2) {
-					Permissions.SetPreviousName(oldUser.id, ", "+oldname+""+reply, function(err, allow) {})
-					return;
-				}
-				Permissions.SetPreviousName(oldUser.id, ", "+oldname+""+reply, function(err, allow) {})
-			}
-		})
-	}
-}
-
-exports.pmMessages = function(bot, msg) {
-	if (msg.channel.isPrivate) {
-		return;
-	}
-	msg.mentions.map((user) => {
-		if (user.status === "offline" || user.status === "idle") {
-			if (user.id) {
-				Permissions.GetPmMentions((msg.channel.server.id + user.id), function(err, reply) {
-					if (reply === "on") {
-						bot.getChannelLogs(msg.channel, 5, function(error, messages) {
-							if (msg.channel.id === "120323989410152448") return;
-							if (msg.channel.id === "132526096750084097") return;
-							var array = [];
-							array.push("`------------------------------`")
-							array.push("You were mentioned in a message by "+msg.author+" in "+msg.channel+" while you were gone.")
-							for (var i = 0; i < messages.length; i++) {
-								if (messages[i].attachments.length > 0) {
-									if (messages[i].content !== undefined || messages[i].content !== null) {
-										array.push(messages[i].author + ": " +messages.content + "  <" + messages[i].attachments[0].url + ">")
-									}
-									else {
-										array.push(messages[i].author + ":  <" + messages[i].attachments[0].url + ">")
-									}
-								}
-								else {
-									if (messages[i].author != undefined) {
-										var test = messages[i].content.split(" ");
-										for (var i = 0; i < test.length; i++) {
-											if (test[i].indexOf("http://") || test[i].indexOf("https://")) {
-												array.push(messages[i].author + ": <"+messages[i].content+">");
-											}
-											else {
-												array.push(messages[i].author + ": "+messages[i].content);
-											}
-										}
-									}
-								}
-							}
-							array.push("If you no longer want to receive these PM's, use `!pmmentions` in the server that you want to ignore.")
-							bot.sendMessage(user, array)
-						});
-					}
-				})
-			}
-		}
-	})
-}
-
-exports.startPolling = function(bot) {
+exports.startOsuTrack = function(bot, client, channels) {
     setInterval (function () {
-        twitchStreamers.items.forEach( function (stream) {
-            pollStream(stream, bot);
-        });
-    }, 60000);
-}
-
-exports.startPunishDown = function(bot) {
-    setInterval (function () {
-        bot.users.forEach( function (user) {
-			bot.servers.forEach( function (server) {
-				punishDown(user, server, bot)
-			})
-        });
-    }, 3600000);
-}
-
-exports.eventAnnounce = function(bot) {
-	setInterval (function () {
-		for (var i = 0; i < events.items.length; i++) {
-			var d = new Date();
-			var miliseconds = d.getTime();
-			if (events.items[i].lastsent + (events.items[i].time * 60000) < miliseconds) {
-				for (var j = 0; j < events.items[i].channel.split(", ").length; j++) {
-					bot.sendMessage(events.items[i].channel.split(", ")[j], events.items[i].response)
-					events.items[i].lastsent = miliseconds
-					require("fs").writeFile("./runtime/events.json",JSON.stringify(events,null,2), null);
-				}
-			}
-		}
-	}, 5000);
-}
-
-exports.startOsuTrack = function(bot) {
-    setInterval (function () {
-		for (var i = 0; i < trackedchannels.items.length; i++) {
-			if (trackedchannels.items[i].inactivity === 0) {
-				var currentInactive = 0
-				osutracking.osutrack(trackedchannels.items[i], bot, currentInactive)
-			}
-			else {
-				if (trackedchannels.items[i].inactivity < 10) {
-					inactivity(bot, trackedchannels.items[i])
-				}
-			}
-		}
+			osudb.getosuPlayers(null, null, null, function (results) {
+        results.forEach(osu => {
+          channels.forEach(channel => {
+            client.names(`${channel}`, function(err, names) {
+              names.forEach(user => {
+                if (user.name === osu.username) {
+                  //console.log(`${user.name} is online!`)
+                }
+              })
+            })
+          })
+        })
+      })
     }, 5000);
-}
+} //needs testing
 
-exports.customSearch = function(msg, command, suffix) {
-    if (command != null) {
-		if (!msg.channel.isPrivate) {
-			if (command.server === msg.channel.server.id) {
-				if (command.command === command1) {
-					customcomcom = command.command;
-					customcomresponse = command.response.replace("%user%", `${msg.author}`).replace("%username%", `${msg.author.username}`).replace("%userid%", `${msg.author.id}`).replace("%channelid%", `${msg.channel.id}`).replace("%channelname%", `${msg.channel}`).replace("%servername%", `${msg.channel.server.name}`).replace("%serverid%", `${msg.channel.server.id}`).replace("%input%", suffix.replace(/@everyone/gi, " ").replace(/@here/gi, " ").replace("!!!!", "test").replace(/everyone/gi, " ").replace(/here/gi, " "))
-				}
-			}
-		}
-	}
-}
+exports.updateNames = function(olduser, newuser) {
+  if (olduser.username != newuser.username) {
+    userdb.userExists(newuser, function(results) {
+      if (results.length < 1) {
+        return;
+      }
+      if (results[0].names.length < 1) {
+        userdb.updateUserNames(newuser)
+      }
+      else {
+        for (var i = 0; i < results[0].names.length; i++) {
+          if (results[0].names[i] === newuser.username) {
+            return
+          }
+        }
+        userdb.updateUserNames(olduser)
+      }
+    })
+  }
+}  //works
 
-function pollStream (stream, bot) {
-    var url = 'https://api.twitch.tv/kraken/streams/' + stream.stream;
-	var request = require('request');
-	request(url, function (error, response, data) {
-		if (!error && response.statusCode == 200) {
-			var parsedData = JSON.parse(data);
-			if (parsedData.stream) {
-				if (!stream.status) {
-					bot.sendMessage(stream.channel, stream.stream + ' is streaming! Link: ' + parsedData.stream.channel.url);
-					stream.status = true;
-					require("fs").writeFile("./runtime/streamers.json",JSON.stringify(twitchStreamers,null,2), null);
-				}
-			} 
-			else {
-				if (stream.status) {
-					setTimeout(function() {	
-						request(url, function (error, response, data) {
-							if (!error && response.statusCode == 200) {
-								var parsedData = JSON.parse(data);
-								if (parsedData.stream) {}
-								else {
-									if (stream.status) {
-										bot.sendMessage(stream.channel, stream.stream + ' has finished streaming.');
-										stream.status = false;
-										require("fs").writeFile("./runtime/streamers.json",JSON.stringify(twitchStreamers,null,2), null);
-									}
-								}
-							}
-						})
-					}, 300000);
-				}
-			}
-		}
+exports.startopenrecPolling = function(bot) {
+    setInterval (function () {
+      openrecdb.findAll(function(results){
+        results.forEach( function (stream) {
+          if(stream.channels.length > 0) {
+            pollopenrec(stream, bot);
+          }
+        });
+      })
+    }, 60000);
+} //works
+
+function pollopenrec (stream, bot) {
+	var options = {
+	  url: 'https://www.openrec.tv/live/' + stream.name
+	};
+	request(options, function (error, response, data) {
+    for (var i = 0; i < stream.channels.length; i++) {
+      var channel = bot.channels.get(stream.channels[i])
+      if (!stream.status) {
+        if (data.indexOf("gbl_onair_status = \"1\"") > -1) {
+          channel.sendMessage(`**${stream.name}** is streaming! Link: https://www.openrec.tv/live/${stream.name}`);
+          openrecdb.updateStatus(stream.name, true)
+        }
+      }
+      else if (stream.status) {
+        if (data.indexOf("gbl_onair_status = \"2\"") > -1) {
+          channel.sendMessage(`**${stream.name}** has finished streaming.`);
+          openrecdb.updateStatus(stream.name, false)
+        }
+      }
+    }
 	})
-}
+} //works
 
-function punishDown (user, server, bot) {
-	Permissions.GetPunishLevel((server.id + user.id), function(err, reply) {
-		if (reply.slice(0,1).indexOf("0") > -1) {}
-		else if (reply.slice(0,1).indexOf("1") > -1 || reply.slice(0,1).indexOf("2") > -1 || reply.slice(0,1).indexOf("3") > -1 || reply.slice(0,1).indexOf("4") > -1 || reply.slice(0,1).indexOf("5") > -1 || reply.slice(0,1).indexOf("6") > -1) {
-			punishTimestamp = reply.slice(-13);
-			currentTimestamp = Date.now();
-			if (reply.substring(1,2) === " ") {
-				var punishlevel = reply.substring(0,1)
-				var lastwarning = reply.substring(2).slice(0, -13)
-			}
-			else {
-				var punishlevel = reply.substring(0,1)
-				var lastwarning = reply.substring(1).slice(0, -13)
-			}
-			twoweeks = parseInt(currentTimestamp) - parseInt(punishTimestamp)
-			if (twoweeks > 1209600000) {
-				Permissions.SetPunishLevel((server.id + user.id), parseInt(punishlevel - 1)+" "+lastwarning+currentTimestamp, function(err, allow) {
-					if (err) {
-						if (server.id === "118689714319392769") {
-							bot.reply("132526096750084097", "An error occured.");
-							return;
-						}
-						else {
-							return;
-						}
-					}
-					if (allow === parseInt(punishlevel - 1)+" "+lastwarning+currentTimestamp) {
-						if (server.id === "118689714319392769") {
-							bot.sendMessage("132526096750084097", user+"'s punish level has decreased from "+punishlevel+" to "+allow.slice(0,1))
-						}
-					}
-					else {
-						if (server.id === "118689714319392769") {
-							bot.reply("132526096750084097", "An error occured.");
-							return;
-						}
-					}
-				});
-			}
-		}
+exports.startTwitchPolling = function(bot) {
+    setInterval (function () {
+      twitchdb.findAll(function(results){
+        results.forEach(function(stream) {
+          if(stream.channels.length > 0) {
+            pollTwitch(stream, bot);
+          }
+        });
+      })
+    }, 60000);
+} //works
+
+function pollTwitch (stream, bot) {
+	var options = {
+	  url: 'https://api.twitch.tv/kraken/streams/' + stream.name,
+	  headers: {
+	    'Client-ID': ConfigFile.twitch_client_id
+	  }
+	};
+	request(options, function (error, response, data) {
+    for (var i = 0; i < stream.channels.length; i++) {
+      var channel = bot.channels.get(stream.channels[i])
+  		if (!error && response.statusCode == 200) {
+  			var parsedData = JSON.parse(data);
+        if (parsedData.stream) {
+          //console.log(parsedData.stream)
+        }
+  			if (parsedData.stream && !stream.status && channel) {
+  					if (parsedData.stream.game !== undefined || parsedData.stream.game !== null) {
+              //console.log(parsedData.stream.channel.logo)
+              var data1 = new Discord.RichEmbed(data);
+              data1.setTitle(`${stream.name} is streaming ${parsedData.stream.game}!`)
+              data1.setDescription(parsedData.stream.channel.status)
+              data1.setURL(`${parsedData.stream.channel.url}`)
+              if (parsedData.stream.channel.logo != null) {
+                data1.setImage(parsedData.stream.channel.logo)
+              }
+              data1.setColor(3381759)
+              channel.sendEmbed(data1)
+  						//channel.sendMessage(`**${stream.name}** is streaming **${parsedData.stream.game}**! Link: ${parsedData.stream.channel.url}`);
+              twitchdb.updateStatus(stream.name, true)
+  					}
+  					else {
+              console.log(`**${stream.name}** is streaming! Link: ${parsedData.stream.channel.url}`)
+  						channel.sendMessage(`**${stream.name}** is streaming! Link: ${parsedData.stream.channel.url}`);
+              twitchdb.updateStatus(stream.name, true)
+  					}
+  			}
+        else {
+  				if (stream.status && channel) {
+  					setTimeout(function() {
+  						request(options, function (error, response, data) {
+  							if (!error && response.statusCode == 200) {
+  								var parsedData = JSON.parse(data);
+  								if (parsedData.stream) {}
+  								else {
+  									if (stream.status && channel) {
+  										//channel.sendMessage(`${stream.name} has finished streaming.`);
+  										twitchdb.updateStatus(stream.name, false)
+  									}
+  								}
+  							}
+  						})
+  					}, 300000);
+  				}
+  			}
+  		}
+    }
 	})
-}
+} //works
 
-function inactivity (bot, data) {
-	var currentInactive = data.inactivity
-	if (data.inactivity === 1) {
-		setTimeout(function() { 
-			osutracking.osutrack(data, bot, currentInactive); 
-		}, 180000);
-	}
-	else if (data.inactivity === 2) {
-		setTimeout(function() { 
-			osutracking.osutrack(data, bot, currentInactive); 
-		}, 300000);
-	}
-	else if (data.inactivity === 3) {
-		setTimeout(function() {
-			osutracking.osutrack(data, bot, currentInactive); 
-		}, 1200000);
-	}
-	else if (data.inactivity === 4) {
-		setTimeout(function() { 
-			osutracking.osutrack(data, bot, currentInactive); 
-		}, 2400000);
-	}
-	else if (data.inactivity === 5) {
-		setTimeout(function() { 
-			osutracking.osutrack(data, bot, currentInactive); 
-		}, 3600000);
-	}
-	if (data.inactivity <= 5) {
-		data.inactivity = data.inactivity * 10
-	}
-	require("fs").writeFile("./runtime/osutracking/db.json",JSON.stringify(trackedchannels, null, 4), null);
+exports.newMember = function(bot, guild, user) {
+  serverdb.getServerData(guild.id, function(results) {
+    if (results[0].announceChannels.length < 1) return;
+    for (var i = 0; i < results[0].announceChannels.length; i++) {
+      var channel = bot.channels.get(results[0].announceChannels[i])
+      if (results[0].joinMessage != "") {
+        channel.sendMessage(`${results[0].joinMessage.replace(`%user%`, `${user}`).replace(`%server%`, `${guild}`)}`)
+      }
+      else {
+        channel.sendMessage(`${user} has joined!`)
+      }
+    }
+  })
+} //needs testing //works
+
+exports.ripMember = function(bot, guild, user) {
+  serverdb.getServerData(guild.id, function(results) {
+    if (results.length < 1) return;
+    if (results[0].announceChannels.length < 1) return;
+    for (var i = 0; i < results[0].announceChannels.length; i++) {
+      var channel = bot.channels.get(results[0].announceChannels[i])
+      if (results[0].leaveMessage != "") {
+        channel.sendMessage(`${results[0].leaveMessage.replace(`%user%`, `${user}`).replace(`%server%`, `${guild}`)}`)
+      }
+      else {
+        channel.sendMessage(`${user} has left!`)
+      }
+    }
+  })
+} //needs testing //works
+
+exports.banMember = function(bot, guild, user) {
+  serverdb.getServerData(guild.id, function(results) {
+    if (results[0].announceChannels.length < 1) return;
+    for (var i = 0; i < results[0].announceChannels.length; i++) {
+      var channel = bot.channels.get(results[0].announceChannels[i])
+      channel.sendMessage(`${user} has been banned!`)
+    }
+  })
+} //needs testing //works
+
+exports.unbanMember = function(bot, guild, user) {
+  serverdb.getServerData(guild.id, function(results) {
+    if (results[0].announceChannels.length < 1) return;
+    for (var i = 0; i < results[0].announceChannels.length; i++) {
+      var channel = bot.channels.get(results[0].announceChannels[i])
+      channel.sendMessage(`${user} has been unbanned!`)
+    }
+  })
+} //needs testing //works
+
+exports.checkMuted = function(bot) {
+  setInterval (function () {
+    permissions.getAll(function(results) {
+      results.forEach(function(data) {
+        if (data.muted === true) {
+          var d = new Date();
+          var miliseconds = d.getTime();
+          var totaltime = parseInt(miliseconds - (data.mutedTimestamp + data.mutedLength))
+          if (totaltime > 0 && data.mutedLength != 0) {
+            var server = bot.guilds.get(data.sid)
+            var user = bot.users.get(data.uid)
+            if (!user) return;
+            if (!server) return;
+            if (!server.member(user)) return
+            for (var i = 0; i < server.channels.array().length; i++) {
+      				var channame = server.channels.array()[i];
+      				var channelaccess = channame.permissionsFor(user).serialize()
+      				if (channelaccess.READ_MESSAGES === true && channame.type === "text") {
+                changePerms(channame, data, user, "text", i)
+      				}
+      				else if (channelaccess.CONNECT === true && channame.type === "voice") {
+                changePerms(channame, data, user, "voice", i)
+      				}
+              permissions.setMuted(user.id, server.id, false, miliseconds, 0)
+      			}
+          }
+        }
+      })
+    })
+  }, 5000);
+} //works basic check
+
+function changePerms(channame, data, user, type, i) {
+  if (type === "text") {
+    channame.overwritePermissions(user, { 'SEND_MESSAGES': undefined }).then(() => {
+      for (var j = 0; j < channame.permissionOverwrites.array().length; j++) {
+        if ((channame.permissionOverwrites.array()[j].denyData == 2048 || channame.permissionOverwrites.array()[j].denyData == 0) && channame.permissionOverwrites.array()[j].allowData == 0) {
+          channame.permissionOverwrites.array()[j].delete().then(overwrites => {
+            //console.log(overwrites)
+          })
+        }
+      }
+    })
+  }
+  else if (type === "voice") {
+    channame.overwritePermissions(user, { 'SPEAK': undefined }).then(() => {
+      for (var j = 0; j < channame.permissionOverwrites.array().length; j++) {
+        if ((channame.permissionOverwrites.array()[j].denyData == 2048 || channame.permissionOverwrites.array()[j].denyData == 0) && channame.permissionOverwrites.array()[j].allowData == 0) {
+          channame.permissionOverwrites.array()[j].delete().then(overwrites => {
+            //console.log(overwrites)
+          })
+        }
+      }
+    })
+  }
 }

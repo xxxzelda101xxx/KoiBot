@@ -1,1 +1,26 @@
-{}
+{
+  "standard": [
+    "osu",
+    "standard"
+  ],
+  "mania": [
+    "osu",
+    "mania"
+  ],
+  "taiko": [
+    "osu",
+    "taiko"
+  ],
+  "ctb": [
+    "osu",
+    "ctb"
+  ],
+  "best": [
+    "osu",
+    "best"
+  ],
+  "signature": [
+    "osu",
+    "sig"
+  ]
+}
