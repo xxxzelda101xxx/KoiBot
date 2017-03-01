@@ -285,12 +285,15 @@ exports.startTwitchPolling = function(bot) {
     setInterval (function () {
       twitchdb.findAll(function(results){
         results.forEach(function(stream) {
-          if(stream.channels.length > 0) {
+          if(stream.channels.length > 0 && stream.status != "offline?" && stream.status != "recheck") {
             pollTwitch(stream, bot);
+          }
+          else if (stream.status === "offline?") {
+            twitchOffline(stream, bot)
           }
         });
       })
-    }, 60000);
+    }, 10000);
 } //works
 
 function pollTwitch (stream, bot) {
@@ -300,57 +303,117 @@ function pollTwitch (stream, bot) {
 	    'Client-ID': ConfigFile.twitch_client_id
 	  }
 	};
-	request(options, function (error, response, data) {
-    for (var i = 0; i < stream.channels.length; i++) {
-      var channel = bot.channels.get(stream.channels[i])
-  		if (!error && response.statusCode == 200) {
-  			var parsedData = JSON.parse(data);
-        if (parsedData.stream) {
-          //console.log(parsedData.stream)
-        }
-  			if (parsedData.stream && !stream.status && channel) {
-  					if (parsedData.stream.game !== undefined || parsedData.stream.game !== null) {
-              //console.log(parsedData.stream.channel.logo)
-              var data1 = new Discord.RichEmbed(data);
-              data1.setTitle(`${stream.name} is streaming ${parsedData.stream.game}!`)
-              data1.setDescription(parsedData.stream.channel.status)
-              data1.setURL(`${parsedData.stream.channel.url}`)
-              if (parsedData.stream.channel.logo != null) {
-                data1.setImage(parsedData.stream.channel.logo)
+	request(options, function (error, response, data1) {
+    stream.channels.forEach(chanid => {
+      var channel = bot.channels.get(chanid)
+      if (!error && response.statusCode == 200) {
+        var parsedData = JSON.parse(data1);
+        if (parsedData.stream && channel) {
+          if (!stream.info[stream.name]) stream.info[stream.name] = {}
+          if (!stream.info[stream.name][channel.id]) {
+            var data = new Discord.RichEmbed(data);
+            data.setTitle(`${stream.name} is streaming ${parsedData.stream.game}`)
+            data.setDescription(parsedData.stream.channel.status)
+            data.setURL(parsedData.stream.channel.url)
+            if (parsedData.stream.channel.logo != null) data.setThumbnail(parsedData.stream.channel.logo);
+            data.setColor("#6441A4")
+            data.addField("Viewers", parsedData.stream.viewers.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","), true)
+            data.addField("Followers", parsedData.stream.channel.followers.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","), true)
+            channel.sendEmbed(data)
+            .then(message => {
+              stream.info[stream.name][channel.id] = {
+                viewers: parsedData.stream.viewers,
+                maxviewers: parsedData.stream.viewers,
+                initialfollowers: parsedData.stream.channel.followers,
+                followers: parsedData.stream.channel.followers,
+                logo: parsedData.stream.channel.logo,
+                msg_id: message.id
               }
-              data1.setColor(3381759)
-              channel.sendEmbed(data1)
-  						//channel.sendMessage(`**${stream.name}** is streaming **${parsedData.stream.game}**! Link: ${parsedData.stream.channel.url}`);
               twitchdb.updateStatus(stream.name, true)
-  					}
-  					else {
-              console.log(`**${stream.name}** is streaming! Link: ${parsedData.stream.channel.url}`)
-  						channel.sendMessage(`**${stream.name}** is streaming! Link: ${parsedData.stream.channel.url}`);
-              twitchdb.updateStatus(stream.name, true)
-  					}
-  			}
-        else {
-  				if (stream.status && channel) {
-  					setTimeout(function() {
-  						request(options, function (error, response, data) {
-  							if (!error && response.statusCode == 200) {
-  								var parsedData = JSON.parse(data);
-  								if (parsedData.stream) {}
-  								else {
-  									if (stream.status && channel) {
-  										//channel.sendMessage(`${stream.name} has finished streaming.`);
-  										twitchdb.updateStatus(stream.name, false)
-  									}
-  								}
-  							}
-  						})
-  					}, 300000);
-  				}
-  			}
-  		}
-    }
+              twitchdb.updateStats(stream.name, stream.info)
+            })
+          }
+          else if (stream.info[stream.name][channel.id]) {
+            bot.channels.get(channel.id).fetchMessage(stream.info[stream.name][channel.id].msg_id)
+            .then(message => {
+              if (parseInt(parsedData.stream.viewers) > parseInt(stream.info[stream.name][channel.id].maxviewers)) stream.info[stream.name][channel.id].maxviewers = parsedData.stream.viewers;
+              var data = new Discord.RichEmbed(data);
+              data.setTitle(`${stream.name} is streaming ${parsedData.stream.game}`)
+              data.setDescription(parsedData.stream.channel.status)
+              data.setURL(`${parsedData.stream.channel.url}`)
+              data.setColor("#6441A4")
+              data.addField("Viewers", `${parsedData.stream.viewers.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")} (Peak: ${stream.info[stream.name][channel.id].maxviewers.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")})`,true)
+              if (parsedData.stream.channel.logo != null) data.setThumbnail(parsedData.stream.channel.logo);
+              if(parseInt(parsedData.stream.channel.followers) - parseInt(stream.info[stream.name][channel.id].initialfollowers) > 0) data.addField("Followers", `${parsedData.stream.channel.followers.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")} (+${parseInt(parsedData.stream.channel.followers) - parseInt(stream.info[stream.name][channel.id].initialfollowers)})`, true);
+              else data.addField("Followers", `${parsedData.stream.channel.followers.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")} (${parseInt(parsedData.stream.channel.followers) - parseInt(stream.info[stream.name][channel.id].initialfollowers)})`, true);
+              message.edit("", {embed: data})
+              .then(() => {
+                stream.info[stream.name][channel.id] = {
+                  viewers: parsedData.stream.viewers,
+                  maxviewers: stream.info[stream.name][channel.id].maxviewers,
+                  initialfollowers: stream.info[stream.name][channel.id].initialfollowers,
+                  followers: parsedData.stream.channel.followers,
+                  msg_id: message.id,
+                  game: parsedData.stream.game,
+                  image: parsedData.stream.channel.logo
+                }
+                twitchdb.updateStatus(stream.name, true)
+                twitchdb.updateStats(stream.name, stream.info)
+              })
+            })
+          }
+        }
+        else if (!parsedData.stream && channel && stream.status) {
+          twitchdb.updateStatus(stream.name, "offline?")
+        }
+      }
+    })
 	})
 } //works
+
+function twitchOffline (stream, bot) {
+  twitchdb.updateStatus(stream.name, "recheck")
+  var options = {
+    url: 'https://api.twitch.tv/kraken/streams/' + stream.name,
+    headers: {
+      'Client-ID': ConfigFile.twitch_client_id
+    }
+  }
+  stream.channels.forEach(channel => {
+    console.log(channel)
+    setTimeout(function() {
+      request(options, function (error, response, data1) {
+        if (!error && response.statusCode == 200) {
+          var parsedData = JSON.parse(data1);
+          if (!parsedData.stream) {
+            console.log(channel)
+            console.log(stream.info[stream.name][channel].msg_id)
+            bot.channels.get(channel).fetchMessage(stream.info[stream.name][channel].msg_id)
+            .then(message => {
+              console.log(message)
+              var data = new Discord.RichEmbed(data);
+              data.setTitle(`${stream.name} has finished streaming.`)
+              data.setURL(`https://twitch.tv/${stream.name}`)
+              data.setColor("#6441A4")
+              data.setThumbnail(stream.info[stream.name][channel].image);
+              data.addField("Viewers", `Peak: ${stream.info[stream.name][channel].maxviewers.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`,true)
+              if (parseInt(stream.info[stream.name][channel].followers) - parseInt(stream.info[stream.name][channel].initialfollowers) > 0) data.addField("Followers", `${stream.info[stream.name][channel].followers.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")} (+${parseInt(stream.info[stream.name][channel].followers) - parseInt(stream.info[stream.name][channel].initialfollowers)})`, true);
+              else data.addField("Followers", `${stream.info[stream.name][channel].followers.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")} (${parseInt(stream.info[stream.name][channel].followers) - parseInt(stream.info[stream.name][channel].initialfollowers)})`, true);
+              message.edit("", {embed: data})
+              .then(() => {
+                twitchdb.updateStatus(stream.name, false)
+                twitchdb.updateStats(stream.name, {})
+              })
+            })
+          }
+          else {
+            twitchdb.updateStatus(stream.name, true)
+          }
+        }
+      })
+    }, 10000, channel);
+  })
+}
 
 exports.newMember = function(bot, guild, user) {
   serverdb.getServerData(guild.id, function(results) {

@@ -22,7 +22,8 @@ exports.newTwitchUser = function (twitchuser, channelid) {
   var data = {
     name: twitchuser,
     channels: [channelid],
-    status: false
+    status: false,
+    info: {}
   }
   db.insert(data, function (err, docs) {})
 }
@@ -44,4 +45,8 @@ exports.findAll = function(callback){
 
 exports.updateStatus = function(twitchuser, status) {
   db.update({ name: twitchuser }, { $set: { status: status } }, {})
+}
+
+exports.updateStats = function(twitchuser, stats) {
+  db.update({ name: twitchuser }, { $set: { info: stats } }, {})
 }
