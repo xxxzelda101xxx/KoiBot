@@ -2757,54 +2757,36 @@ Commands.yandere = {
 	level: 0,
 	nsfw: true,
 	fn: function(bot, msg, suffix) {
-		unirest.post("https://yande.re/post/index.json?limit=500&tags=" + suffix)
+		unirest.get(`https://yande.re/post/index.json?limit=500&tags=${suffix}`)
 			.end(function(result) {
 				if (result.body.length < 1) {
 					msg.channel.sendMessage(`Sorry, nothing found.`);
 					return;
 				}
-				if (suffix.length < 1) {
-					suffix = `<no tags specified>`;
-				}
 				var suffix1 = suffix.toString().toLowerCase();
-				if ((suffix1.indexOf("gaping") > -1 || suffix1.indexOf("gape") > -1) || suffix1.indexOf("prolapse") > -1 || suffix1.indexOf("toddlercon") > -1) {
+				if ((suffix1.indexOf("gaping") < 0 && suffix1.indexOf("gape") < 0) || suffix1.indexOf("prolapse") < 0 || suffix1.indexOf("toddlercon")< 0) {
 					var count = Math.floor((Math.random() * result.body.length));
 					var count1 = Math.floor((Math.random() * result.body.length));
 					var count2 = Math.floor((Math.random() * result.body.length));
 					var kona = result.body[count].file_url;
-					var kona1 = result.body[count1].file_url;
-					var kona2 = result.body[count2].file_url;
-					msg.channel.sendMessage("You've searched for `" + suffix + "`. Sending images in a pm...");
-					user.sendFile(kona, '', '');
-					user.sendFile(kona1, '', '');
-					user.sendFile(kona2, '', '');
-				}
-				else {
-					var count = Math.floor((Math.random() * result.body.length));
-					var count1 = Math.floor((Math.random() * result.body.length));
-					var count2 = Math.floor((Math.random() * result.body.length));
-					var yandere = result.body[count].file_url;
-					var yandere1 = result.body[count1].file_url;
-					var yandere2 = result.body[count2].file_url;
-					if (result.body.length <= 2) {
-						msg.channel.sendMessage("There were less than 3 results for `" + suffix + "` :(");
-						if (result.body.length === 1) {
-							yandere = result.body[0].file_url;
-							msg.channel.sendFile(yandere, '', '');
-							return;
-						}
-						if (result.body.length === 2) {
-							yandere = result.body[0].file_url;
-							yandere1 = result.body[1].file_url;
-							msg.channel.sendFile(yandere, '', '');
-							msg.channel.sendFile(yandere1, '', '');
-							return;
-						}
+					var data = new Discord.RichEmbed(data);
+					data.setImage(kona)
+					data.addField("Tags", result.body[count].tags)
+					msg.channel.sendEmbed(data)
+					if (result.body.length >= 2) {
+						var data1 = new Discord.RichEmbed(data1);
+						var kona1 = result.body[count1].file_url;
+						data1.setImage(kona1)
+						data1.addField("Tags", result.body[count1].tags)
+						msg.channel.sendEmbed(data1)
 					}
-					msg.channel.sendMessage("You've searched for ` " + suffix + " ` . There are `" + result.body.length + "` results that contain those tags.\nSending `3` random images of those `" + result.body.length + "` results.");
-					msg.channel.sendFile(yandere, '', '');
-					msg.channel.sendFile(yandere1, '', '');
-					msg.channel.sendFile(yandere2, '', '');
+					if (result.body.length >= 3) {
+						var data2 = new Discord.RichEmbed(data2);
+						var kona2 = result.body[count2].file_url;
+						data2.setImage(kona2)
+						data2.addField("Tags", result.body[count2].tags)
+						msg.channel.sendEmbed(data2)
+					}
 				}
 			});
 	}
